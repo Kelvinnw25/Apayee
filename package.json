@@ -1,0 +1,24 @@
+{
+  "name": "apayee",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private Local AI Gateway - a standalone service that manages AI request execution for privately operated applications.",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
+    "test": "node --import ./tests/helpers/no-network.js --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "example:qatool": "node --env-file-if-exists=.env examples/qatool-client/run.js",
+    "claude:login": "node --env-file-if-exists=.env scripts/claude-auth.js login",
+    "claude:status": "node --env-file-if-exists=.env scripts/claude-auth.js status",
+    "claude:smoke": "node --env-file-if-exists=.env scripts/claude-auth.js smoke"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "fastify": "^5.12.7"
+  }
+}

@@ -1,0 +1,48 @@
+# Dependencies (restore with `npm install`; package-lock.json IS tracked)
+node_modules/
+
+# Secrets and local settings. Only the documented example is tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.credentials.json
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Temporary and local-only files
+*.tmp
+*.temp
+*.bak
+*.swp
+.cache/
+# Per-run directories the Claude provider creates in the OS temp folder, should one ever land here
+apayee-claude-*/
+
+# Claude Code per-user local files (CLAUDE.md and shared .claude/ settings stay tracked)
+.claude/settings.local.json
+.claude/scratch/
+
+# Package artifacts
+*.tgz
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor and IDE artifacts
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.code-workspace
