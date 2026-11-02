@@ -1,0 +1,176 @@
+{
+  "snapshot": {
+    "captured": "2026-11-03",
+    "purpose": "Environment and dependency record for troubleshooting, compatibility checks and recovery. Human-readable twin: ENVIRONMENT_SNAPSHOT.md",
+    "contains_secrets": false,
+    "contains_account_identity": false,
+    "evidence_levels": ["observed", "verified", "minimum", "suspected", "untested"]
+  },
+  "system": {
+    "os": "Windows 11 Pro",
+    "os_version": "10.0.26300",
+    "os_build": 26300,
+    "os_architecture": "64-bit",
+    "cpu": "AMD Ryzen 5 7500F",
+    "cpu_cores": 6,
+    "cpu_threads": 12,
+    "ram_gb": 15.6,
+    "node_platform": "win32",
+    "node_arch": "x64",
+    "setup_shell": "Windows PowerShell 5.1.26100.9711"
+  },
+  "toolchain": {
+    "node": {
+      "observed": "22.15.0",
+      "v8": "12.4.254.21-node.24",
+      "path": "C:\\Program Files\\nodejs\\node.exe",
+      "managed_by_version_manager": false,
+      "minimum": "22.13.0",
+      "minimum_source": "package.json engines"
+    },
+    "npm": {
+      "observed": "11.6.4",
+      "install_location": "%APPDATA%\\npm\\node_modules\\npm (user-level, not the npm bundled with Node)",
+      "minimum": null,
+      "lockfile_version": 3
+    },
+    "git": { "observed": "2.48.1.windows.1" },
+    "claude_code_cli": {
+      "observed": "2.1.316",
+      "minimum": "2.1.299",
+      "minimum_source": "docs/CLAUDE_PROVIDER.md",
+      "install_method": "official native installer (install.ps1 from claude.ai), reviewed before running, 2026-11-03",
+      "path": "%USERPROFILE%\\.local\\bin\\claude.exe",
+      "on_user_path": true,
+      "path_note": "added 2026-11-03; sessions started earlier do not see it. Apayee also sets APAYEE_CLAUDE_CLI_PATH",
+      "auto_updates": true,
+      "authentication": {
+        "logged_in": true,
+        "auth_method": "claude.ai",
+        "api_provider": "firstParty",
+        "api_or_cloud_env_variables_set": false
+      },
+      "other_copies": [
+        { "location": "VS Code extension bundle", "version": "2.1.314", "used_by_apayee": false }
+      ]
+    },
+    "version_managers": {
+      "nvm_windows": { "installed": true, "version": "1.1.11", "node_versions_listed": ["23.11.0"], "manages_active_node": false },
+      "volta": false,
+      "fnm": false,
+      "nodist": false,
+      "winget": true
+    },
+    "docker": {
+      "used_by_project": false,
+      "dockerfile_or_compose_in_repo": false,
+      "desktop": "4.97.0.244584",
+      "engine_client": "29.9.2",
+      "engine_server": "29.9.2",
+      "compose": "v5.6.1",
+      "wsl": { "version": "2.6.3.0", "kernel": "6.6.87.2-1", "wslg": "1.0.71", "default_version": 2, "distributions": [{ "name": "docker-desktop", "version": 2, "state_at_capture": "Stopped" }] },
+      "note": "Docker server answered at capture although the docker-desktop WSL distribution read Stopped; recorded as observed, not explained"
+    }
+  },
+  "project": {
+    "name": "apayee",
+    "version": "0.1.0",
+    "module_type": "ES modules, no build step, no TypeScript, no linter",
+    "package_manager": "npm",
+    "install_command": "npm ci",
+    "install_config": { "project_npmrc": false, "user_npmrc": false, "non_default_npm_settings": ["prefix=%APPDATA%\\npm"] }
+  },
+  "dependencies": {
+    "source_of_truth": "package-lock.json",
+    "lockfile_version": 3,
+    "registry": "registry.npmjs.org",
+    "locked_package_count": 49,
+    "locked_dev_package_count": 0,
+    "direct": {
+      "fastify": { "range": "^5.12.7", "locked": "5.12.7", "installed": "5.12.7" },
+      "ajv": { "range": "^8.20.0", "locked": "8.20.0", "installed": "8.20.0" },
+      "ajv-formats": { "range": "^3.0.1", "locked": "3.0.1", "installed": "3.0.1" }
+    },
+    "lockfile_matches_installed_direct_dependencies": true
+  },
+  "integrity": {
+    "package_lock_sha256": "a315135b0c0d74f30d5f63f1fb2b99485d632d79191503649784108ce95be1cd",
+    "package_json_sha256": "be00260a39f63d45816531f8330bb86a7bd4ff3488c44f7cccc37f003d50ccd2",
+    "git_commit": "4cf403552777e51b249db734ccd0979a180d4011",
+    "git_branch": "main",
+    "working_tree_at_capture": { "tracked_files_modified": false, "untracked": [".env.example"] },
+    "note": "ENVIRONMENT_SNAPSHOT.md/.json and small links in README.md and CLAUDE.md were added after this capture"
+  },
+  "runtime": {
+    "host": "127.0.0.1",
+    "port": 4100,
+    "health_endpoint": "GET /v1/health (bearer token required when APAYEE_AUTH_TOKEN is set)",
+    "start": "npm start",
+    "stop": "Ctrl+C in the terminal (graceful)",
+    "queue": { "active_executions": 1, "max_waiting": 16 },
+    "timeouts_ms": { "default": 180000, "max": 600000, "claude_ceiling": 300000 }
+  },
+  "configuration": {
+    "file": ".env (Git-ignored); .env.example documents every variable",
+    "variables_status": {
+      "APAYEE_HOST": "set (loopback)",
+      "APAYEE_PORT": "set (4100)",
+      "APAYEE_AUTH_TOKEN": "set (value not recorded)",
+      "APAYEE_PROVIDER": "set (claude)",
+      "APAYEE_CLAUDE_EXPERIMENTAL": "set (true)",
+      "APAYEE_CLAUDE_SUBSCRIPTION_CONFIRMED": "set (false; owner attestation not yet made)",
+      "APAYEE_CLAUDE_CLI_PATH": "set (absolute path)",
+      "other_APAYEE_variables": "unset, code defaults"
+    }
+  },
+  "verification": {
+    "date": "2026-11-03",
+    "environment": "Node 22.15.0, npm 11.6.4, Windows 11 build 26300",
+    "npm_ci": { "result": "pass", "packages": 49, "vulnerabilities_reported": 0 },
+    "npm_test": { "result": "pass", "tests": 262, "passed": 260, "failed": 0, "skipped": 2, "skipped_reason": "both guarded by process.platform === 'win32'", "uses_real_model": false },
+    "startup": { "result": "pass", "bound_address": "127.0.0.1:4100", "health_without_token": 401, "health_with_token": 200, "provider_reported": "claude_not_ready", "provider_state": "subscription_unconfirmed", "stopped_cleanly": true },
+    "claude_cli": { "version_check": "pass", "auth_status_check": "pass", "readiness_stage2_via_apayee": "not run (attestation flag off)", "generation_request_sent": false },
+    "previously_verified_not_rerun": "2026-11-02: one claude:smoke request sent directly to ClaudeProvider.generate on CLI 2.1.316 returned schema-valid output, num_turns 2 (source: docs/CLAUDE_PROVIDER.md)"
+  },
+  "version_status": {
+    "observed": { "node": "22.15.0", "npm": "11.6.4", "claude_cli": "2.1.316", "fastify": "5.12.7", "ajv": "8.20.0", "ajv-formats": "3.0.1" },
+    "verified_working": {
+      "node": "22.15.0 (npm ci, npm test, startup + health)",
+      "npm": "11.6.4 (npm ci, npm ls)",
+      "dependencies": "lockfile as hashed above (npm test)",
+      "claude_cli": "2.1.316 (version and auth status on 2026-11-03; one direct smoke request on 2026-11-02)"
+    },
+    "minimum_required": { "node": "22.13.0", "claude_cli": "2.1.299" },
+    "suspected_problems": [],
+    "untested": [
+      "Node versions other than 22.15.0 (including 23.11.0, present under nvm-windows, and 24 or newer)",
+      "npm versions other than 11.6.4, including the npm bundled with Node 22.15.0",
+      "Claude CLI versions other than 2.1.316",
+      "Newer direct dependency versions or re-resolved ranges",
+      "Operating systems other than this Windows 11 build",
+      "Live QATOOL run, HTTP-to-real-CLI request, concurrency, real timeouts, larger schemas"
+    ]
+  },
+  "known_issues": [
+    "One timing-sensitive test can fail on a heavily loaded Windows machine and pass alone (README)",
+    "Claude CLI auto-updates; Apayee has a minimum version but no upper bound and was exercised against 2.1.316 only",
+    "--tools \"\" worked for structured output on 2.1.316; suspect it first on no_structured_output",
+    "npm .cmd launcher for claude is refused; use claude.exe or APAYEE_CLAUDE_CLI_PATH",
+    "apiProvider and subscriptionType in `claude auth status` are undocumented and not relied on",
+    "Raw `claude auth status` output contains account identifiers; read selected fields only",
+    "Terminals opened before the User PATH change do not find claude",
+    "nvm-windows `nvm use` would target C:\\Program Files\\nodejs, currently a real directory; behaviour untested. npm 11.6.4 is user-level and not restored by reinstalling Node",
+    ".env.example was missing from the initial commit and was reconstructed on 2026-11-03 (untracked)",
+    "Policy for scripted use of a consumer subscription is unconfirmed (docs/CLAUDE_PROVIDER.md)"
+  ],
+  "recovery": {
+    "check_state": ["node --version", "npm --version", "claude --version (full path)", "git rev-parse HEAD", "Get-FileHash package-lock.json -Algorithm SHA256"],
+    "dependencies": ["Remove-Item -Recurse -Force node_modules", "npm ci", "npm ls --depth=0", "npm test"],
+    "restore_lockfile_if_altered": "git checkout -- package-lock.json package.json",
+    "node_options_not_executed": ["nvm install 22.15.0 then nvm use 22.15.0 (nvm-windows 1.1.11 present; see known_issues)", "winget install OpenJS.NodeJS.LTS --version 22.15.0 (if offered)", "installer from https://nodejs.org/dist/v22.15.0/"],
+    "npm": "npm install -g npm@11.6.4",
+    "claude_cli": "claude update to move forward; for 2.1.316 run the reviewed official install.ps1 with the version argument (pinning behaviour unverified)",
+    "configuration": "recreate .env from .env.example, generate a new token, update QATOOL APAYEE_TOKEN",
+    "verify": ["npm test", "npm start", "GET /v1/health with bearer token", "npm run claude:status (needs both Claude flags true)"]
+  }
+}

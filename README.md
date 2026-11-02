@@ -94,6 +94,7 @@ apayee/
   docs/
     CLAUDE_PROVIDER.md       Claude provider: design, setup, policy status, readiness, errors
     PROVIDER_SELECTION_AUDIT.md   historical QATOOL provider-selection audit (2026-10-31)
+    ENVIRONMENT_SNAPSHOT.md/.json recorded tool and dependency versions, with recovery steps
   scripts/
     claude-auth.js           CLI for claude:login, claude:status, claude:smoke
   src/
@@ -166,6 +167,9 @@ Nothing outside the project folder is required for the mock provider.
    npm start
    ```
    The service listens on `http://127.0.0.1:4100`. Try `GET /v1/health`.
+
+The Node.js, npm, Claude CLI and dependency versions this project was last checked with, and how to
+restore them, are in [docs/ENVIRONMENT_SNAPSHOT.md](docs/ENVIRONMENT_SNAPSHOT.md).
 
 **To use the experimental Claude provider** on the new machine you also need to do the following
 there. Nothing carries over from the old computer: the login lives in the CLI's own storage for that

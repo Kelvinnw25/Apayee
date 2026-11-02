@@ -57,7 +57,7 @@ decide whether Claude is selectable.
 | `scripts/claude-auth.js` | `claude:login`, `claude:status`, `claude:smoke` (implemented in `providers/claude/auth.js`) |
 | `examples/qatool-client/` | Mock-level demonstration of the QATOOL integration pattern. Not QATOOL's code |
 | `tests/` | `node:test` suites; `helpers/` and `fixtures/` hold the fake CLI and harness |
-| `docs/` | `CLAUDE_PROVIDER.md` (provider design, setup, policy), `PROVIDER_SELECTION_AUDIT.md` (historical QATOOL audit, dated 2026-10-31) |
+| `docs/` | `CLAUDE_PROVIDER.md` (provider design, setup, policy), `PROVIDER_SELECTION_AUDIT.md` (historical QATOOL audit, dated 2026-10-31), `ENVIRONMENT_SNAPSHOT.md` / `.json` (recorded toolchain and dependency versions, evidence levels, recovery steps) |
 
 Claude provider files (`src/providers/claude/`): `claude.provider.js` (class, readiness cache, error
 mapping), `cli.js` (resolve and spawn the executable, kill tree, output caps), `invocation.js` (exact
@@ -147,6 +147,8 @@ Windows is the primary platform (PowerShell); the one real-signal test is skippe
 
 - Never read, print or commit `.env`, tokens, credentials, email or organization identifiers. Use
   `.env.example` for documentation.
+- Read `docs/ENVIRONMENT_SNAPSHOT.md` before changing the Node.js, npm or Claude CLI version or any
+  dependency, and update it (and the `.json`) afterwards. It says which versions were actually verified.
 - Do not edit QATOOL unless the task says so. Do not commit or push unless asked.
 - No API keys, Console billing, credential extraction, private endpoints or retries meant to evade a
   usage limit. Do not weaken auth, loopback, TLS or antivirus settings to make something run.
