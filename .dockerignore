@@ -1,0 +1,37 @@
+# Allow-list: only what the image needs is sent to the build. Everything else, including any
+# file added later, stays out of the build context.
+*
+!package.json
+!package-lock.json
+!src/
+!scripts/
+!docker/entrypoint.sh
+
+# Never in an image, even if an allowed directory ever contains them.
+**/.env
+**/.env.*
+**/node_modules
+**/.git
+**/.gitignore
+**/.claude
+**/.credentials.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.log
+**/logs
+**/coverage
+**/.nyc_output
+**/.cache
+**/*.tmp
+**/*.temp
+**/*.bak
+**/*.swp
+**/*.tgz
+**/apayee-claude-*
+**/.vscode
+**/.idea
+**/.DS_Store
+**/Thumbs.db
+**/desktop.ini

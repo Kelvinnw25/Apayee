@@ -24,7 +24,7 @@ POST /v1/generate
   onRequest hooks     rejectBrowserOrigins (403 if Origin header)  ->  bearerAuthentication (if token set)
   body parse          application/json only (text/plain parser removed), bodyLimit
   parseGenerateRequest (src/validation/request.js)   shape, timeout <= max, task supported, schema compiles (Ajv)
-  queue.enqueue        FIFO, ONE active execution, bounded pending + bounded wait
+  queue.enqueue        FIFO, APAYEE_MAX_CONCURRENT active executions (default 1, max 3), bounded pending + bounded wait
   provider.generate    mock | claude          (selected by APAYEE_PROVIDER at boot, never by the client)
   acceptedResult       JSON round-trip, must be an object/array, validated against the client's schema
   200 {request_id, status:'success', provider, result, metadata{queue_wait_ms, execution_time_ms, total_time_ms, usage?}}
@@ -48,7 +48,7 @@ decide whether Claude is selectable.
 | `src/errors.js` | `ApiError` and the error-code catalog (HTTP status, retryable) |
 | `src/middleware/authentication.js` | Bearer check (constant time) and browser-origin rejection |
 | `src/routes/generate.js`, `health.js` | The two endpoints. Disconnect aborts a queued or active request |
-| `src/queue/request-queue.js` | The only concurrency control. In memory, one active run, abort grace, `abandoned` counter |
+| `src/queue/request-queue.js` | The only concurrency control. In memory, a Set of active runs (`maxActive` from `APAYEE_MAX_CONCURRENT`, default 1), abort grace, `abandoned` counter |
 | `src/validation/` | `request.js` (request contract) and `json-schema.js` (Ajv, refuses `pattern`, external `$ref`, `$async`, deep nesting) |
 | `src/providers/provider.js` | `Provider` contract: `generate()`, `status()`, `supportsTask()` |
 | `src/providers/registry.js` | Fixed table `{mock, claude}`. Add a provider here; no dynamic module paths |
@@ -57,7 +57,8 @@ decide whether Claude is selectable.
 | `scripts/claude-auth.js` | `claude:login`, `claude:status`, `claude:smoke` (implemented in `providers/claude/auth.js`) |
 | `examples/qatool-client/` | Mock-level demonstration of the QATOOL integration pattern. Not QATOOL's code |
 | `tests/` | `node:test` suites; `helpers/` and `fixtures/` hold the fake CLI and harness |
-| `docs/` | `CLAUDE_PROVIDER.md` (provider design, setup, policy), `PROVIDER_SELECTION_AUDIT.md` (historical QATOOL audit, dated 2026-10-31), `ENVIRONMENT_SNAPSHOT.md` / `.json` (recorded toolchain and dependency versions, evidence levels, recovery steps) |
+| `docs/` | `CLAUDE_PROVIDER.md` (provider design, setup, policy), `PROVIDER_SELECTION_AUDIT.md` (historical QATOOL audit, dated 2026-10-31), `ENVIRONMENT_SNAPSHOT.md` / `.json` (recorded toolchain and dependency versions, evidence levels, recovery steps), `DOCKER_LOCAL.md` (container build, sign-in volume, ports, notes for QATOOL's Compose file) |
+| `Dockerfile`, `.dockerignore`, `docker/entrypoint.sh` | Container image. Node 22.15.0 on Debian, native Linux CLI 2.1.316 for user `node`. The entrypoint runs Apayee on `127.0.0.1:4101` and `socat` on `0.0.0.0:4100`, because the Claude provider refuses a non-loopback host. No compose file here; QATOOL's repo owns it |
 
 Claude provider files (`src/providers/claude/`): `claude.provider.js` (class, readiness cache, error
 mapping), `cli.js` (resolve and spawn the executable, kill tree, output caps), `invocation.js` (exact
@@ -129,8 +130,27 @@ npm run claude:smoke         # ONE real model request; needs APAYEE_CLAUDE_SMOKE
 npm run example:qatool       # needs `npm start` running in another terminal
 ```
 
+Docker (details in `docs/DOCKER_LOCAL.md`). Two ways to start the image, with different env-file handling:
+a standalone `docker run` uses a separate `.env.docker`, never the Windows `.env`; QATOOL's Compose file
+(`../QATOOL/compose.yaml`, its repo) passes `../Apayee/.env` to the container with `env_file`. The latter works
+because `docker/entrypoint.sh` exports `APAYEE_HOST=127.0.0.1` and `APAYEE_PORT=4101` itself and Compose sets
+`APAYEE_CLAUDE_CLI_PATH` under `environment`, which beats the file. Under Compose neither 4100 nor 4101 is
+published on the host, and `apayee-claude-config` is a named, Compose-managed volume (`down -v` deletes the
+sign-in). Standalone:
+
+```powershell
+docker build -t apayee:local .
+docker volume create apayee-claude-config      # holds the container's own Claude sign-in
+docker run -it --rm -v apayee-claude-config:/home/node/.claude apayee:local node scripts/claude-auth.js login
+docker run -d --name apayee --restart unless-stopped -p 127.0.0.1:4100:4100 --env-file .env.docker -v apayee-claude-config:/home/node/.claude apayee:local
+docker stop apayee; docker rm apayee
+```
+
 There is no build step and no linter configured. Process environment variables override `.env`.
-Windows is the primary platform (PowerShell); the one real-signal test is skipped there.
+Windows is the primary platform (PowerShell); two POSIX-only tests are skipped there (the real OS signal test
+in `tests/lifecycle.test.js` and the executable-bit test in `tests/claude-provider.test.js`). Both, and the
+Linux process-group kill path, have been run in a Node 22.15.0 Linux container as a non-root user (see
+`docs/ENVIRONMENT_SNAPSHOT.md`): every test passes there.
 
 ## Status when this file was written
 
@@ -139,6 +159,9 @@ Windows is the primary platform (PowerShell); the one real-signal test is skippe
   succeeded on CLI 2.1.316 (`num_turns` 2, schema valid), and `--tools ""` still allowed structured
   output. **Not yet done:** a live QATOOL -> Apayee HTTP -> Claude run, concurrency, long-run and
   larger-schema behaviour against the real CLI.
+- Concurrency: `APAYEE_MAX_CONCURRENT` 1 to 3 (default 1) is covered by queue tests and fake-CLI tests
+  (`tests/queue.test.js`, `tests/claude-concurrency.test.js`). Several real CLI processes sharing one
+  sign-in and config directory is **unverified**; do not describe it as safe or measured.
 - Policy: whether scripted use of a subscription is allowed is **unconfirmed**. Technical success is not
   permission. Do not describe the provider as approved. The unsent draft question is in
   `docs/CLAUDE_PROVIDER.md`.

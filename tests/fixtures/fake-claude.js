@@ -1,4 +1,5 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
  * A stand-in for the `claude` program. It makes no network call and talks to no model.
@@ -12,9 +13,16 @@ import { appendFileSync, writeFileSync } from 'node:fs';
  *   output   the structured answer for `success`
  *   delayMs  wait this long before answering
  *   log      file that receives one JSON line per invocation
- *   pidFile  file that receives this process's pid
+ *   pidFile  file that receives this process's pid (overwritten by every run)
+ *   pidDir   directory that receives one empty file named after each run's pid, so
+ *            concurrent runs leave distinct evidence
+ *   perPrompt  { needle: overrides }; a run whose stdin contains the needle uses the
+ *            overrides, so one process can hang while another answers
+ *   echo     prefix; the answer becomes the first word of stdin that starts with it,
+ *            which shows each run got its own input and produced its own output
  */
-const config = JSON.parse(process.env.FAKE_CLAUDE ?? '{}');
+const base = JSON.parse(process.env.FAKE_CLAUDE ?? '{}');
+let config = base;
 const args = process.argv.slice(2);
 
 const record = (entry) => {
@@ -67,8 +75,12 @@ if (!args.includes('-p')) {
 }
 
 const stdin = await readStdin();
+for (const [needle, overrides] of Object.entries(base.perPrompt ?? {})) {
+  if (stdin.includes(needle)) config = { ...base, ...overrides };
+}
 record({
   kind: 'print',
+  pid: process.pid,
   args,
   stdin,
   cwd: process.cwd(),
@@ -78,10 +90,14 @@ record({
   retries: process.env.MAX_STRUCTURED_OUTPUT_RETRIES ?? null,
 });
 if (config.pidFile) writeFileSync(config.pidFile, String(process.pid));
+if (config.pidDir) writeFileSync(join(config.pidDir, String(process.pid)), '');
 
 if (config.delayMs) await new Promise((resolve) => setTimeout(resolve, config.delayMs));
 
-const answer = config.output ?? { answer: 'from-fake-claude' };
+const echoed = config.echo
+  ? stdin.split(/\s+/).find((word) => word.startsWith(config.echo)) ?? 'no-echo-match'
+  : null;
+const answer = echoed !== null ? { answer: echoed } : (config.output ?? { answer: 'from-fake-claude' });
 
 switch (config.run ?? 'success') {
   case 'success':

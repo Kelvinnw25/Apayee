@@ -23,8 +23,9 @@ process.on('message', async (message) => {
 
   if (message.type === 'signal') {
     process.emit(message.signal);
-    // The IPC channel would otherwise keep the process alive after shutdown.
-    process.disconnect();
+    // The IPC channel would otherwise keep the process alive after shutdown. On POSIX the
+    // SIGTERM listener below has already closed it by now, and a second close throws.
+    if (process.connected) process.disconnect();
   }
 });
 

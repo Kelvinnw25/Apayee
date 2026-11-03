@@ -38,7 +38,7 @@ the operator configured, checks the output against the schema, and returns norma
 | Apayee does                                     | Apayee does not                                   |
 | ----------------------------------------------- | ------------------------------------------------- |
 | Accept and validate generation requests         | Parse PRDs or understand any client's domain      |
-| Queue them, FIFO, running one at a time         | Orchestrate workflows or stages                   |
+| Queue them, FIFO, one at a time by default      | Orchestrate workflows or stages                   |
 | Run the provider chosen by server configuration | Let clients choose a provider or run commands     |
 | Enforce timeouts and cancellation               | Retry anything automatically                      |
 | Validate output against the client's schema     | Repair or alter a provider's output               |
@@ -72,7 +72,7 @@ Fastify server        origin check, bearer auth, body limit
 request validation    shape, timeout limit, task support, schema compiles
       |               (rejected here means never queued)
       v
-FIFO queue            one active execution, bounded pending, bounded wait
+FIFO queue            1 to 3 active executions (default 1), bounded pending, bounded wait
       |
       v
 provider              registry -> mock | claude (experimental, runs the official CLI)
@@ -95,6 +95,8 @@ apayee/
     CLAUDE_PROVIDER.md       Claude provider: design, setup, policy status, readiness, errors
     PROVIDER_SELECTION_AUDIT.md   historical QATOOL provider-selection audit (2026-10-31)
     ENVIRONMENT_SNAPSHOT.md/.json recorded tool and dependency versions, with recovery steps
+    DOCKER_LOCAL.md          running Apayee in Docker: build, sign-in volume, ports, Compose notes
+  Dockerfile, .dockerignore  the container image (docker/entrypoint.sh starts Apayee and its port forwarder)
   scripts/
     claude-auth.js           CLI for claude:login, claude:status, claude:smoke
   src/
@@ -104,7 +106,7 @@ apayee/
     errors.js                error-code catalog (HTTP status, retryable)
     middleware/authentication.js   bearer token, browser-origin rejection
     routes/                  health.js, generate.js
-    queue/request-queue.js   FIFO queue, one active run
+    queue/request-queue.js   FIFO queue, APAYEE_MAX_CONCURRENT active runs (default 1)
     validation/              request.js (contract), json-schema.js (Ajv rules)
     providers/
       provider.js            the Provider contract
@@ -171,6 +173,26 @@ Nothing outside the project folder is required for the mock provider.
 The Node.js, npm, Claude CLI and dependency versions this project was last checked with, and how to
 restore them, are in [docs/ENVIRONMENT_SNAPSHOT.md](docs/ENVIRONMENT_SNAPSHOT.md).
 
+**In Docker** (local development, with its own Linux CLI and its own sign-in in a named volume): the full
+procedure is in [docs/DOCKER_LOCAL.md](docs/DOCKER_LOCAL.md). For a standalone `docker run`, use a separate
+`.env.docker`, not the Windows `.env` (the commands below do). QATOOL's Compose file behaves differently: it
+passes the Windows `../Apayee/.env` to the container, and that works only because the container entrypoint fixes
+the internal host and port (`127.0.0.1:4101`, socat on `4100`) and the Compose file overrides
+`APAYEE_CLAUDE_CLI_PATH` with the Linux path. Under Compose no host port is published for Apayee at all.
+
+```powershell
+docker build -t apayee:local .
+docker volume create apayee-claude-config
+docker run -it --rm -v apayee-claude-config:/home/node/.claude apayee:local node scripts/claude-auth.js login
+docker run -d --name apayee --restart unless-stopped -p 127.0.0.1:4100:4100 --env-file .env.docker -v apayee-claude-config:/home/node/.claude apayee:local
+docker stop apayee
+```
+
+Inside the container Apayee listens on loopback (4101), as the Claude provider requires, and `socat` listens on
+port 4100. With `docker run`, publish it only on `127.0.0.1`; under QATOOL's Compose file do not publish it.
+The sign-in volume `apayee-claude-config` is a named volume in both cases; under Compose it is Compose-managed,
+so `docker compose down -v` deletes the container's sign-in.
+
 **To use the experimental Claude provider** on the new machine you also need to do the following
 there. Nothing carries over from the old computer: the login lives in the CLI's own storage for that
 Windows user, and `.env` holds the token.
@@ -199,7 +221,8 @@ never put real values in documentation.
 | `APAYEE_ALLOW_REMOTE`        | `false`     | Explicit opt-in to a non-loopback host                           |
 | `APAYEE_AUTH_TOKEN`          | unset       | Bearer token; at least 32 characters. Required for remote access and for the `claude` provider |
 | `APAYEE_PROVIDER`            | `mock`      | Active provider: `mock`, or the experimental `claude`            |
-| `APAYEE_MAX_QUEUE_SIZE`      | `16`        | Requests that may wait behind the running one                    |
+| `APAYEE_MAX_CONCURRENT`      | `1`         | Executions at once, 1 to 3. Above 1, see the concurrency note below |
+| `APAYEE_MAX_QUEUE_SIZE`      | `16`        | Requests that may wait while every execution slot is busy        |
 | `APAYEE_MAX_QUEUE_WAIT_MS`   | `600000`    | Longest wait in the queue                                        |
 | `APAYEE_DEFAULT_TIMEOUT_MS`  | `180000`    | Execution budget when a request sends no `timeout_ms`            |
 | `APAYEE_MAX_TIMEOUT_MS`      | `600000`    | A larger `timeout_ms` is rejected, not shortened                 |
@@ -240,12 +263,20 @@ All routes need `Authorization: Bearer <token>` when a token is configured.
   "queue": {
     "length": 0,
     "running": false,
+    "active": 0,
+    "max_active": 1,
+    "pending": 0,
     "capacity": 16,
     "abandoned": 0,
     "totals": { "succeeded": 2, "failed": 0, "timed_out": 0, "cancelled": 0, "rejected": 0 }
   }
 }
 ```
+
+`active` is the number of executions running now and `max_active` is `APAYEE_MAX_CONCURRENT`;
+`pending` is the number waiting (`length` is the same figure, kept for existing clients), and
+`capacity` is `APAYEE_MAX_QUEUE_SIZE`. `running` stays a boolean: true while `active` is above 0.
+All of these are plain numbers; none carries a path, a version of the CLI or request content.
 
 `abandoned` counts provider executions still running after their abort grace period. It should
 always be 0. Health never sends a generation request.
@@ -366,8 +397,17 @@ exhausted subscription allowance, retrying straight away will not help; wait for
 
 **Queue**
 
-- First in, first out, with one provider execution at a time. No request can overtake an earlier one.
-- A request runs immediately if idle; otherwise it waits, up to `APAYEE_MAX_QUEUE_SIZE` requests.
+- First in, first out, with `APAYEE_MAX_CONCURRENT` provider executions at a time (1 unless you
+  change it; the most allowed is 3). Requests **start** in arrival order and no request can
+  overtake an earlier one; with more than one slot they may **finish** in any order.
+- A request runs immediately while a slot is free; otherwise it waits, up to `APAYEE_MAX_QUEUE_SIZE`
+  requests. `QUEUE_FULL` is returned only when every slot is busy and the waiting line is full.
+- **More than one slot (concurrency note).** Each execution has its own process, empty working
+  directory, timeout and abort signal, and stopping one does not touch another. The tests for this use
+  the fake CLI and mock provider only. What they cannot show is how several real Claude CLI processes
+  behave when they share one sign-in and one configuration directory; that is **unverified** and
+  needs a separately approved real run (`docs/CLAUDE_PROVIDER.md`). Each extra slot also uses subscription
+  allowance faster, and needs more memory, CPU and process IDs from the host or container.
 - An id is released as soon as its request finishes, so the same id can be sent again afterwards.
 - Apayee never retries. **The queue is in memory, so pending requests are lost on restart.** That is
   acceptable because clients own their workflow state and can resend.
@@ -377,18 +417,19 @@ exhausted subscription allowance, retrying straight away will not help; wait for
 - `timeout_ms` covers **execution only** and starts when the request becomes active, so requests
   ahead of it can't use it up. Waiting is bounded separately by `APAYEE_MAX_QUEUE_WAIT_MS`.
 - When a client disconnects, a pending request is removed and never runs; an active one is aborted.
+  Only that request is affected: the other active executions keep running.
 - On timeout or cancellation the provider's `AbortSignal` fires, and the queue waits up to
-  `APAYEE_ABORT_GRACE_MS` for it to stop. A provider that honours the signal never overlaps the next
-  request.
+  `APAYEE_ABORT_GRACE_MS` for it to stop. A provider that honours the signal never takes the slot
+  of a request that has not finished stopping, so executions never exceed `APAYEE_MAX_CONCURRENT`.
 - A provider that ignores the signal loses its slot after the grace period so the queue can continue,
-  **but it keeps running in the background**. Concurrency can exceed one until it finishes. This is
+  **but it keeps running in the background**. Concurrency can exceed the limit until it finishes. This is
   logged as `provider_ignored_abort` and counted in `abandoned`, and the provider contract forbids it.
 - **Client HTTP timeouts.** Headers arrive only when generation ends, so a client's own timeout must
   cover queue wait plus execution. Node's built-in `fetch` has a default `headersTimeout` of 300
   seconds and would abort anything longer. The example client uses `node:http` for this reason.
 
 **Shutdown.** On SIGINT, SIGTERM or SIGBREAK, Apayee stops immediately rather than draining: pending
-requests are rejected, the active one is aborted, each is answered with `SERVICE_SHUTTING_DOWN`, and
+requests are rejected, every active one is aborted, each is answered with `SERVICE_SHUTTING_DOWN`, and
 the server closes. If shutdown exceeds `APAYEE_SHUTDOWN_TIMEOUT_MS`, the process exits with code 1.
 On Windows, Ctrl+C and Ctrl+Break are graceful; `Stop-Process -Force` and `taskkill /F` kill the
 process with no cleanup (a running CLI child is then not stopped by Apayee).
@@ -503,8 +544,10 @@ There is no build step and no linter configured; the code runs as written on Nod
 The suite runs real Fastify servers on real sockets and has no external dependencies. A guard makes
 any `fetch` to another host fail the test. The Claude provider is tested against a **fake CLI**
 (`tests/fixtures/fake-claude.js`), so the suite sends no model request and needs neither QATOOL nor a
-Claude login. The test for a real OS signal is skipped on Windows, which can't deliver a catchable
-signal to another process; there a child process raises the signal on itself instead.
+Claude login. Two tests are skipped on Windows: the one for a real OS signal, because Windows can't
+deliver a catchable signal to another process (there a child process raises the signal on itself instead),
+and the one for the POSIX executable bit. To run them, run `npm test` on Linux, for example in a plain
+`node:22` container with the project copied in and `npm ci` run there; they pass in that setup.
 
 Some tests use short timeouts (hundreds of milliseconds) around process start-up. On a heavily loaded
 Windows machine one of them ("the provider's own ceiling ends a run that hangs") has failed in a

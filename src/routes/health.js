@@ -38,6 +38,10 @@ export function healthRoute(app, { provider, queue, config }) {
       queue: {
         length: stats.pending,
         running: stats.active > 0,
+        // Numbers only. `length` and `running` stay for existing clients.
+        active: stats.active,
+        max_active: queue.maxActive,
+        pending: stats.pending,
         capacity: config.maxQueueSize,
         abandoned: stats.abandoned,
         totals: {

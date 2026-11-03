@@ -40,8 +40,8 @@ checks and quick recovery. Machine-readable twin: [ENVIRONMENT_SNAPSHOT.json](EN
 | nvm-windows | 1.1.11, installed; lists only Node 23.11.0 | on PATH | not required | Not used for the active Node |
 | winget | present | on PATH | not required | Not used |
 
-Not used by this project: Docker. There is no `Dockerfile` or compose file in the repository.
-Docker was present on the machine and is recorded only for completeness (section 9).
+Docker is optional: the project can run directly on Windows or from the `Dockerfile` added on 2026-11-03
+(section 9). There is no compose file in this repository; QATOOL's repository is to own it.
 
 ## 4. Claude Code CLI
 
@@ -122,10 +122,10 @@ every variable.
 | `APAYEE_CLAUDE_CLI_PATH` | set, absolute path to `claude.exe` |
 | All other `APAYEE_*` variables | unset, code defaults apply (see `README.md`, "Configuration") |
 
-Listens on `http://127.0.0.1:4100`. Queue: one active execution, 16 waiting. Defaults: execution timeout
+Listens on `http://127.0.0.1:4100`. Queue: one active execution by default (`APAYEE_MAX_CONCURRENT`, 1 to 3), 16 waiting. Defaults: execution timeout
 180 s, maximum 600 s, Claude ceiling 300 s. Process environment variables override `.env`.
 
-## 9. Docker and WSL (recorded only; nothing was installed)
+## 9. Docker and WSL (nothing was installed for this project)
 
 | Item | Observed |
 | --- | --- |
@@ -135,7 +135,10 @@ Listens on `http://127.0.0.1:4100`. Queue: one active execution, 16 waiting. Def
 | WSL | 2.6.3.0, kernel 6.6.87.2-1, WSLg 1.0.71; default version 2 |
 | WSL distributions | `docker-desktop` only, version 2. Its state read "Stopped" in `wsl -l -v` although the Docker server answered. Recorded as observed, not explained |
 
-Apayee does not use any of these.
+The project's own container image (added 2026-11-03, [DOCKER_LOCAL.md](DOCKER_LOCAL.md)) is built with these: base
+`node:22.15.0-bookworm-slim` (Debian 12), Node 22.15.0, npm 10.9.2 (bundled, unlike the Windows PC's 11.6.4), Claude
+CLI 2.1.316 (Linux native build), the same lockfile via `npm ci --omit=dev`. It built and started on this Docker
+Desktop; the Claude sign-in inside it and a request to the model were not exercised.
 
 ## 10. Commands
 
@@ -166,8 +169,15 @@ Never run for routine checks: `npm run claude:smoke` (sends one real request and
 **Verified working** (what was run, 2026-11-03, Node 22.15.0 / npm 11.6.4 / Windows 11 build 26300):
 
 - `npm ci`: 49 packages, 0 vulnerabilities reported.
-- `npm test`: 262 tests, 260 passed, 0 failed, 2 skipped. Both skips are guarded by
+- `npm test`: 262 tests, 260 passed, 0 failed, 2 skipped, on the commit above. Both skips are guarded by
   `process.platform === 'win32'` (`tests/lifecycle.test.js`, `tests/claude-provider.test.js`). Uses the fake CLI.
+- `npm test` after `APAYEE_MAX_CONCURRENT` was added (same toolchain, 2026-11-03): 317 tests, 315 passed,
+  0 failed, 0 cancelled, 2 skipped (the same two). The added tests use the mock provider and the fake CLI only.
+- `npm test` on Linux (2026-11-03): a throwaway container from `node:22.15.0-bookworm-slim` (Linux x86_64, npm
+  10.9.2, user `node`, no Claude CLI on `PATH`), the working tree copied in, `npm ci`, then `npm test`: 317 tests,
+  317 passed, 0 failed, 0 cancelled, 0 skipped, so the two Windows-skipped tests ran and passed. The first
+  such run found one failure that already existed at the last commit (`tests/fixtures/signal-child.js` closed the
+  IPC channel twice on POSIX; a one-line guard was added). Fake CLI only; no model request.
 - `npm start`: bound only to `127.0.0.1:4100`; `GET /v1/health` returned 401 without the token and 200 with it;
   stopped cleanly afterwards.
 - Claude CLI 2.1.316: `--version` and `auth status` reported as in section 4. Readiness stage 2 was **not**
@@ -188,7 +198,8 @@ output (`num_turns` 2). That is the same CLI version as now.
 - Any Claude CLI other than 2.1.316 (between 2.1.299 and 2.1.316, or newer).
 - Newer versions of the three direct dependencies, or a fresh `npm install` that re-resolves ranges.
 - Operating systems other than this Windows 11 build.
-- A request through Apayee's HTTP endpoint and queue to the real CLI, concurrency, real timeouts, larger schemas, and a live QATOOL run.
+- A request through Apayee's HTTP endpoint and queue to the real CLI, real timeouts, larger schemas, and a live QATOOL run.
+- `APAYEE_MAX_CONCURRENT` above 1 with the real CLI: several processes sharing one sign-in and configuration directory, and their memory, CPU and process-ID use, have not been tried or measured (fake-CLI tests only).
 
 ## 12. Known compatibility issues and limitations
 
@@ -211,7 +222,7 @@ output (`num_turns` 2). That is the same CLI version as now.
    It was reconstructed on 2026-11-03 and is untracked. If it is lost, a documentation test fails.
 9. **Policy.** Whether scripted use of a consumer subscription is permitted is unconfirmed
    (`docs/CLAUDE_PROVIDER.md`). Technical success is not permission.
-10. **By design:** no TLS, queue lost on restart, one active execution; `pattern` is refused in schemas.
+10. **By design:** no TLS, queue lost on restart, one active execution unless `APAYEE_MAX_CONCURRENT` is raised (1 to 3; untested with the real CLI above 1); `pattern` is refused in schemas.
 
 ## 13. Recovery procedure
 

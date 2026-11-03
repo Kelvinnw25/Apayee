@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +25,16 @@ export function cleanUpScratchAfterTests() {
 export function scratch() {
   const dir = mkdtempSync(join(tmpdir(), 'apayee-test-'));
   scratchDirectories.push(dir);
-  return { dir, log: join(dir, 'calls.jsonl'), pidFile: join(dir, 'pid') };
+  const pidDir = join(dir, 'pids');
+  mkdirSync(pidDir);
+  return { dir, log: join(dir, 'calls.jsonl'), pidFile: join(dir, 'pid'), pidDir };
+}
+
+/** The pids the fake recorded, one file per run, in numeric order. */
+export function readPids(pidDir) {
+  return readdirSync(pidDir)
+    .map(Number)
+    .sort((a, b) => a - b);
 }
 
 /** process.env without anything that would count as an API credential or an Apayee setting. */
@@ -78,7 +87,10 @@ export function claudeSettings(overrides = {}) {
  */
 export function fakeProvider({ behaviour = {}, settings = {}, env: extraEnv = {}, now } = {}) {
   const files = scratch();
-  const env = fakeEnvironment({ log: files.log, pidFile: files.pidFile, ...behaviour }, extraEnv);
+  const env = fakeEnvironment(
+    { log: files.log, pidFile: files.pidFile, pidDir: files.pidDir, ...behaviour },
+    extraEnv
+  );
   const events = [];
   const provider = new ClaudeProvider({
     config: { claude: claudeSettings(settings) },

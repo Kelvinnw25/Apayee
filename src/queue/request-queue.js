@@ -1,9 +1,13 @@
 import { ApiError } from '../errors.js';
 
 /**
- * In-memory FIFO queue with exactly one active execution.
+ * In-memory FIFO queue with a fixed number of active executions (one by default).
  *
  *   enqueue -> pending (bounded in size and in wait) -> active -> settled
+ *
+ * Requests start in arrival order whenever fewer than `maxActive` are running. They may
+ * finish in any order; each has its own abort controller, timers and outcome, so stopping
+ * one never touches another.
  *
  * Every enqueue promise settles exactly once, on every path, and every path goes
  * through #settle, which is the only place timers, listeners and the id set are
@@ -14,16 +18,17 @@ import { ApiError } from '../errors.js';
  * waiting has its own separate bound.
  *
  * Aborting an active request waits briefly for the work to stop. That keeps
- * concurrency at one for any provider that honours its signal, while the grace
- * limit means a provider that ignores it cannot hold the queue. Work that outlives
- * the grace period is counted as `abandoned` in stats.
+ * concurrency at or below `maxActive` for any provider that honours its signal, while the
+ * grace limit means a provider that ignores it cannot hold a slot. Work that outlives
+ * the grace period is counted as `abandoned` in stats, and until it ends the real
+ * concurrency can be higher than `maxActive`.
  *
  * Nothing is retried, and nothing survives a restart. Clients own their workflow
  * state and can resend.
  */
 export class RequestQueue {
   #pending = [];
-  #active = null;
+  #active = new Set();
   #ids = new Set();
   #closed = false;
   #idleWaiters = [];
@@ -32,14 +37,19 @@ export class RequestQueue {
 
   /**
    * @param {object} options
-   * @param {number} options.maxPending      requests allowed to wait behind the active one
+   * @param {number} options.maxPending      requests allowed to wait while every slot is busy
    * @param {number} options.maxQueueWaitMs
+   * @param {number} [options.maxActive]     executions allowed at once, 1 by default
    * @param {number} [options.abortGraceMs]  how long aborted work gets to stop
    * @param {{warn: Function}} [options.logger]
    */
-  constructor({ maxPending, maxQueueWaitMs, abortGraceMs = 2_000, logger }) {
+  constructor({ maxPending, maxQueueWaitMs, maxActive = 1, abortGraceMs = 2_000, logger }) {
+    if (!Number.isSafeInteger(maxActive) || maxActive < 1) {
+      throw new RangeError('maxActive must be a positive integer.');
+    }
     this.maxPending = maxPending;
     this.maxQueueWaitMs = maxQueueWaitMs;
+    this.maxActive = maxActive;
     this.abortGraceMs = abortGraceMs;
     this.logger = logger;
   }
@@ -51,7 +61,7 @@ export class RequestQueue {
   stats() {
     return {
       pending: this.#pending.length,
-      active: this.#active ? 1 : 0,
+      active: this.#active.size,
       abandoned: this.#abandoned,
       ...this.#counters,
     };
@@ -90,7 +100,7 @@ export class RequestQueue {
   }
 
   /**
-   * Stops the queue for good: pending requests are rejected, the active one is
+   * Stops the queue for good: pending requests are rejected, every active one is
    * aborted. Resolves once nothing is left active, including the grace period.
    */
   close() {
@@ -100,10 +110,12 @@ export class RequestQueue {
     for (const entry of [...this.#pending]) {
       this.#settle(entry, 'cancelled', { error: shuttingDown() });
     }
-    if (!this.#active) return Promise.resolve();
+    if (this.#active.size === 0) return Promise.resolve();
 
     const idle = new Promise((resolve) => this.#idleWaiters.push(resolve));
-    this.#abortActive(this.#active, shuttingDown(), 'cancelled');
+    for (const entry of [...this.#active]) {
+      this.#abortActive(entry, shuttingDown(), 'cancelled');
+    }
     return idle;
   }
 
@@ -111,19 +123,24 @@ export class RequestQueue {
     if (this.#closed) return new ApiError('SERVICE_SHUTTING_DOWN');
     if (signal?.aborted) return cancellationFrom(signal.reason);
     if (this.#ids.has(requestId)) return new ApiError('DUPLICATE_REQUEST_ID');
-    if (this.#active && this.#pending.length >= this.maxPending) return new ApiError('QUEUE_FULL');
+    // Full means every slot is busy AND the waiting line is full. With a free slot the
+    // request starts at once, so an idle queue accepts even with zero pending capacity.
+    if (this.#active.size >= this.maxActive && this.#pending.length >= this.maxPending) {
+      return new ApiError('QUEUE_FULL');
+    }
     return null;
   }
 
   #pump() {
-    if (this.#active || this.#closed) return;
-
-    const next = this.#pending.shift();
-    if (next) this.#start(next);
+    while (!this.#closed && this.#active.size < this.maxActive) {
+      const next = this.#pending.shift();
+      if (!next) return;
+      this.#start(next);
+    }
   }
 
   #start(entry) {
-    this.#active = entry;
+    this.#active.add(entry);
     clearTimeout(entry.waitTimer);
 
     entry.controller = new AbortController();
@@ -172,7 +189,7 @@ export class RequestQueue {
   #cancel(entry, reason) {
     const error = cancellationFrom(reason);
 
-    if (entry === this.#active) {
+    if (this.#active.has(entry)) {
       this.#abortActive(entry, error, 'cancelled');
     } else {
       this.#settle(entry, 'cancelled', { error });
@@ -208,9 +225,7 @@ export class RequestQueue {
     entry.signal?.removeEventListener('abort', entry.onClientAbort);
     this.#ids.delete(entry.requestId);
 
-    if (entry === this.#active) {
-      this.#active = null;
-    } else {
+    if (!this.#active.delete(entry)) {
       this.#pending.splice(this.#pending.indexOf(entry), 1);
     }
 
@@ -220,7 +235,7 @@ export class RequestQueue {
 
     this.#pump();
 
-    if (!this.#active && this.#idleWaiters.length > 0) {
+    if (this.#active.size === 0 && this.#idleWaiters.length > 0) {
       for (const resolve of this.#idleWaiters.splice(0)) resolve();
     }
   }

@@ -32,6 +32,88 @@ describe('GET /v1/health', () => {
     const text = JSON.stringify(body);
     assert.doesNotMatch(text, /[A-Za-z]:\\\\|\/home\/|\/Users\/|Desktop|token|env/i);
   });
+
+  test('idle queue figures: the existing fields are kept and the numeric ones added', async () => {
+    const body = await (await fetch(`${server.baseUrl}/v1/health`)).json();
+
+    assert.deepEqual(body.queue, {
+      length: 0,
+      running: false,
+      active: 0,
+      max_active: 1,
+      pending: 0,
+      capacity: 16,
+      abandoned: 0,
+      totals: { succeeded: 0, failed: 0, timed_out: 0, cancelled: 0, rejected: 0 },
+    });
+  });
+});
+
+describe('configurable concurrency over HTTP', () => {
+  test('three requests run at once, a fourth waits, and health shows it', async () => {
+    let running = 0;
+    let peak = 0;
+    const server = await startTestServer({
+      config: { maxConcurrent: 3 },
+      provider: new MockProvider({
+        latencyMs: 200,
+        onCall: () => {
+          running += 1;
+          peak = Math.max(peak, running);
+          setTimeout(() => (running -= 1), 190);
+        },
+      }),
+    });
+    try {
+      const responses = [];
+      for (const index of [0, 1, 2, 3]) {
+        responses.push(server.post(requestBody({ request_id: `c${index}` })));
+        await waitFor(() => {
+          const s = server.app.queue.stats();
+          return s.active + s.pending > index;
+        });
+      }
+
+      const { queue } = await (await fetch(`${server.baseUrl}/v1/health`)).json();
+      assert.deepEqual(
+        { active: queue.active, max_active: queue.max_active, pending: queue.pending },
+        { active: 3, max_active: 3, pending: 1 }
+      );
+      assert.equal(queue.running, true);
+      assert.equal(queue.capacity, 16);
+
+      for (const response of await Promise.all(responses)) assert.equal(response.status, 200);
+      assert.equal(peak, 3);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('the sixteen-deep line is unchanged: the 20th request meets a full queue at concurrency 3', async () => {
+    const server = await startTestServer({
+      config: { maxConcurrent: 3 },
+      provider: new MockProvider({ latencyMs: 300 }),
+    });
+    try {
+      const accepted = [];
+      for (let index = 0; index < 19; index += 1) {
+        accepted.push(server.post(requestBody({ request_id: `q${index}` })));
+        await waitFor(() => {
+          const s = server.app.queue.stats();
+          return s.active + s.pending > index;
+        });
+      }
+      assert.deepEqual(
+        { active: server.app.queue.stats().active, pending: server.app.queue.stats().pending },
+        { active: 3, pending: 16 }
+      );
+
+      assertFailure(await server.post(requestBody({ request_id: 'q19' })), 429, 'QUEUE_FULL');
+      for (const response of await Promise.all(accepted)) assert.equal(response.status, 200);
+    } finally {
+      await server.close();
+    }
+  });
 });
 
 describe('POST /v1/generate', () => {

@@ -62,8 +62,19 @@
       "winget": true
     },
     "docker": {
-      "used_by_project": false,
-      "dockerfile_or_compose_in_repo": false,
+      "used_by_project": "optional; Dockerfile added 2026-11-03, see docs/DOCKER_LOCAL.md",
+      "dockerfile_in_repo": true,
+      "compose_file_in_repo": false,
+      "container_image": {
+        "base": "node:22.15.0-bookworm-slim (Debian 12)",
+        "node": "22.15.0",
+        "npm": "10.9.2 (bundled)",
+        "claude_cli": "2.1.316 (Linux native, /home/node/.local/bin/claude)",
+        "user": "node (uid 1000)",
+        "claude_config_volume_mount": "/home/node/.claude",
+        "verified": "built, started, health/auth checked, volume persistence checked on 2026-11-03",
+        "not_exercised": "browser sign-in inside the container, any model request, QATOOL, Compose"
+      },
       "desktop": "4.97.0.244584",
       "engine_client": "29.9.2",
       "engine_server": "29.9.2",
@@ -107,7 +118,7 @@
     "health_endpoint": "GET /v1/health (bearer token required when APAYEE_AUTH_TOKEN is set)",
     "start": "npm start",
     "stop": "Ctrl+C in the terminal (graceful)",
-    "queue": { "active_executions": 1, "max_waiting": 16 },
+    "queue": { "active_executions": 1, "max_waiting": 16, "max_concurrent_variable": "APAYEE_MAX_CONCURRENT", "max_concurrent_allowed": "1 to 3", "max_concurrent_real_cli_above_1": "untested" },
     "timeouts_ms": { "default": 180000, "max": 600000, "claude_ceiling": 300000 }
   },
   "configuration": {
@@ -128,6 +139,8 @@
     "environment": "Node 22.15.0, npm 11.6.4, Windows 11 build 26300",
     "npm_ci": { "result": "pass", "packages": 49, "vulnerabilities_reported": 0 },
     "npm_test": { "result": "pass", "tests": 262, "passed": 260, "failed": 0, "skipped": 2, "skipped_reason": "both guarded by process.platform === 'win32'", "uses_real_model": false },
+    "npm_test_after_max_concurrent": { "result": "pass", "tests": 317, "passed": 315, "failed": 0, "cancelled": 0, "skipped": 2, "skipped_reason": "the same two win32-guarded tests", "uses_real_model": false },
+    "npm_test_linux": { "result": "pass", "environment": "node:22.15.0-bookworm-slim, Linux x86_64, npm 10.9.2, non-root user node, no claude on PATH, working tree copied in, npm ci", "tests": 317, "passed": 317, "failed": 0, "cancelled": 0, "skipped": 0, "note": "the two win32-skipped tests ran and passed; one pre-existing failure in tests/fixtures/signal-child.js (double IPC disconnect on POSIX) was fixed first", "uses_real_model": false },
     "startup": { "result": "pass", "bound_address": "127.0.0.1:4100", "health_without_token": 401, "health_with_token": 200, "provider_reported": "claude_not_ready", "provider_state": "subscription_unconfirmed", "stopped_cleanly": true },
     "claude_cli": { "version_check": "pass", "auth_status_check": "pass", "readiness_stage2_via_apayee": "not run (attestation flag off)", "generation_request_sent": false },
     "previously_verified_not_rerun": "2026-11-02: one claude:smoke request sent directly to ClaudeProvider.generate on CLI 2.1.316 returned schema-valid output, num_turns 2 (source: docs/CLAUDE_PROVIDER.md)"
@@ -148,7 +161,8 @@
       "Claude CLI versions other than 2.1.316",
       "Newer direct dependency versions or re-resolved ranges",
       "Operating systems other than this Windows 11 build",
-      "Live QATOOL run, HTTP-to-real-CLI request, concurrency, real timeouts, larger schemas"
+      "Live QATOOL run, HTTP-to-real-CLI request, real timeouts, larger schemas",
+      "APAYEE_MAX_CONCURRENT above 1 with the real CLI: shared sign-in and config directory, memory, CPU and PID use (fake-CLI tests only)"
     ]
   },
   "known_issues": [
@@ -161,6 +175,7 @@
     "Terminals opened before the User PATH change do not find claude",
     "nvm-windows `nvm use` would target C:\\Program Files\\nodejs, currently a real directory; behaviour untested. npm 11.6.4 is user-level and not restored by reinstalling Node",
     ".env.example was missing from the initial commit and was reconstructed on 2026-11-03 (untracked)",
+    "APAYEE_MAX_CONCURRENT above 1: concurrent real CLI processes sharing one sign-in are an unverified runtime consideration (docs/CLAUDE_PROVIDER.md, Concurrency)",
     "Policy for scripted use of a consumer subscription is unconfirmed (docs/CLAUDE_PROVIDER.md)"
   ],
   "recovery": {

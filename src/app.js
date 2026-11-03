@@ -36,6 +36,7 @@ export async function buildApp({ config, provider, logStream, env = process.env 
   const queue = new RequestQueue({
     maxPending: config.maxQueueSize,
     maxQueueWaitMs: config.maxQueueWaitMs,
+    maxActive: config.maxConcurrent,
     abortGraceMs: config.abortGraceMs,
     logger: app.log,
   });

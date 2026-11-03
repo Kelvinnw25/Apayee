@@ -19,6 +19,9 @@ export class ConfigError extends Error {
 /** Node's timers overflow above this and fire immediately. */
 const MAX_TIMER_MS = 2_147_483_647;
 
+/** Upper bound for APAYEE_MAX_CONCURRENT. Raising it needs measurements, not just a number. */
+export const MAX_CONCURRENT_LIMIT = 3;
+
 const MIN_TOKEN_LENGTH = 32;
 const MIN_TOKEN_DISTINCT_CHARS = 8;
 const PLACEHOLDER_TOKEN = /change.?me|replace.?me|your.?token|example|placeholder/i;
@@ -182,6 +185,9 @@ export function loadConfig(env = process.env) {
     authToken,
     provider,
     claude: loadClaudeSettings(env),
+    // 1 is the tested, default behaviour. Above 1 the CLI processes share one sign-in; see
+    // docs/CLAUDE_PROVIDER.md before raising it.
+    maxConcurrent: intFrom(env, 'APAYEE_MAX_CONCURRENT', 1, { min: 1, max: MAX_CONCURRENT_LIMIT }),
     maxQueueSize: intFrom(env, 'APAYEE_MAX_QUEUE_SIZE', 16),
     maxQueueWaitMs: intFrom(env, 'APAYEE_MAX_QUEUE_WAIT_MS', 600_000, { min: 1 }),
     defaultTimeoutMs,

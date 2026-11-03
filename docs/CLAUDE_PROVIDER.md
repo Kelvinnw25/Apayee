@@ -203,6 +203,32 @@ is not documented, which is another reason the plan check is manual.
 Invalid values stop startup. QATOOL's `LLM_TIMEOUT_MS` is sent as the request's `timeout_ms`, so
 raise it in QATOOL if the CLI needs longer than its default 120 seconds.
 
+## Concurrency
+
+`APAYEE_MAX_CONCURRENT` (default `1`, allowed 1 to 3) sets how many CLI runs may be active at once.
+The default keeps the original behaviour: one run, the rest waiting in the FIFO line
+(`APAYEE_MAX_QUEUE_SIZE`, default 16, unchanged by this setting).
+
+What the tests show (fake CLI, no model): with 2 or 3 slots every request gets its own process, its
+own empty working directory and its own output, cancelling or timing out one run stops only that
+process tree, and a readiness probe can run while executions are active without disturbing them.
+
+What is **not established** (unverified runtime considerations, not claims of safety):
+
+- Several real CLI processes share one sign-in and one configuration directory (`HOME`, and
+  `CLAUDE_CONFIG_DIR` in the container). Whether the real CLI handles that without trouble, for
+  example when its login is refreshed while other runs are active, has not been tried. A bad outcome
+  would look like `PROVIDER_NOT_READY` until the next `npm run claude:login`.
+- Memory, CPU and process IDs per running CLI have not been measured. Size container limits for the
+  slots plus a short extra margin: a run that ignores its abort keeps its process until it exits, and
+  the readiness probe starts up to two short CLI processes (about once a minute).
+- More parallel runs use the subscription allowance faster, and a usage limit reached by one run is
+  likely to be reached by the others. The written-permission question at the top is unchanged and
+  matters more as throughput grows.
+
+Raise the setting only for a test you have approved, starting with the smallest requests, and read
+`queue.active` and `queue.max_active` in `GET /v1/health` while it runs.
+
 ## Readiness
 
 Health shows `provider: "claude"` only when all of these pass; otherwise `claude_not_ready` plus a
@@ -270,7 +296,9 @@ every documented override stopping the provider, every readiness state, that unr
 process, that health polling does not start a process per poll, structured-output parsing and schema
 validation, error classification against the strings in Anthropic's error reference, timeouts,
 cancellation, process-tree cleanup and queue release, no retry, no fallback to the mock, and that no
-response or log carries prompt or CLI text. The fake's output shapes follow the documentation; they
+response or log carries prompt or CLI text. Also with the fake: 1, 2 and 3 concurrent runs (distinct
+processes, directories and outputs; one run cancelled or timed out while the others continue; a
+readiness probe overlapping active runs). The fake's output shapes follow the documentation; they
 are not output from a real CLI.
 
 **One real run (2026-11-02, CLI 2.1.316, Windows, owner's own login):** `npm run claude:smoke` sent one
@@ -283,7 +311,7 @@ documented. `claude auth status` also showed `apiProvider` and `subscriptionType
 undocumented, so Apayee does not rely on them and they do not replace the plan check below.
 
 **Still not run against the real CLI:** a request through Apayee's HTTP endpoint and queue (for
-example from QATOOL), concurrency, cancellation and timeout of a real run, a larger schema or prompt
+example from QATOOL), concurrency of real runs at any setting, cancellation and timeout of a real run, a larger schema or prompt
 than the smoke test's, and how a missing login or a usage limit appears in `json` output. Those paths
 are covered only by the fake CLI. If a live run returns `no_structured_output`, suspect the
 `--tools ""` restriction first, and do not loosen it without reviewing what would be enabled.

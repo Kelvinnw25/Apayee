@@ -104,6 +104,22 @@ describe('binding and remote access', () => {
     });
   }
 
+  test('APAYEE_MAX_CONCURRENT defaults to 1 and accepts only 1 to 3', () => {
+    assert.equal(loadConfig({}).maxConcurrent, 1);
+    assert.equal(loadConfig({ APAYEE_MAX_CONCURRENT: '' }).maxConcurrent, 1);
+    for (const value of ['1', '2', '3']) {
+      assert.equal(loadConfig({ APAYEE_MAX_CONCURRENT: value }).maxConcurrent, Number(value));
+    }
+    for (const value of ['0', '4', '-1', '1.5', 'many', '2 3']) {
+      assert.throws(() => loadConfig({ APAYEE_MAX_CONCURRENT: value }), ConfigError, value);
+    }
+  });
+
+  test('the queue size is independent of the concurrency setting', () => {
+    const config = loadConfig({ APAYEE_MAX_CONCURRENT: '3' });
+    assert.equal(config.maxQueueSize, 16);
+  });
+
   test('refuses a default timeout above the maximum', () => {
     assert.throws(
       () => loadConfig({ APAYEE_DEFAULT_TIMEOUT_MS: '200', APAYEE_MAX_TIMEOUT_MS: '100' }),
