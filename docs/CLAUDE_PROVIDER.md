@@ -1,15 +1,16 @@
-# Claude provider (experimental, owner-only)
+# Claude provider (experimental, owner-run)
 
 Apayee can answer requests by running the **official, unmodified Claude Code CLI** (`claude -p`)
-with **your own signed-in Claude subscription**. It is a private experiment for one person on one
-machine. It is off by default.
+with **the owner's own signed-in Claude subscription**. It is off by default and needs three explicit
+opt-ins (`APAYEE_PROVIDER=claude`, `APAYEE_CLAUDE_EXPERIMENTAL=true`,
+`APAYEE_CLAUDE_SUBSCRIPTION_CONFIRMED=true`). Authentication belongs entirely to the CLI: Apayee never
+collects, stores, copies or forwards a credential, holds no API key, and never falls back to the mock.
 
-It is not a product feature. Do not expose it to other users, host it, or resell access.
+## Third-party terms that apply
 
-## Read this first: policy status is unconfirmed
-
-Technically possible is not the same as allowed. Anthropic's pages say (quoted from
-<https://code.claude.com/docs/en/legal-and-compliance>):
+Technically possible is not the same as allowed. Anthropic's pages state, among other things
+(<https://code.claude.com/docs/en/legal-and-compliance>, checked when this section was written; read the
+current text):
 
 > OAuth authentication is intended exclusively for purchasers of Claude Free, Pro, Max, Ultra, Team,
 > and Enterprise subscription plans and is designed to support ordinary use of Claude Code and other
@@ -22,38 +23,23 @@ Technically possible is not the same as allowed. Anthropic's pages say (quoted f
 > their users. Moreover, developers may not collect, store, or intermediate Claude.ai credentials or
 > session tokens — sign-in to a Claude account must complete through Anthropic's own flow.
 
-> Advertised usage limits for Pro, Max, and Ultra plans assume ordinary, individual usage of Claude
-> Code and the Agent SDK.
+The Consumer Terms (<https://www.anthropic.com/legal/consumer-terms>) also restrict accessing the services
+"through automated or non-human means, whether through a bot, script, or otherwise" except via an API key or
+where Anthropic explicitly permits it, and say an account may not be made available to anyone else.
 
-The Consumer Terms (as returned when read; effective date shown on the page: 8 Oct 2025 — check the
-page for a newer version) restrict, in Section 3 item 7:
+What this means for operating Apayee:
 
-> Except when you are accessing our Services via an Anthropic API Key or where we otherwise
-> explicitly permit it, to access the Services through automated or non-human means, whether through
-> a bot, script, or otherwise.
-
-and, in Section 2: "You also may not make your Account available to anyone else."
-
-What the design does about it: Apayee never collects, stores, copies or forwards a credential; the
-login is the CLI's own flow; it serves only its owner and is loopback-only behind a token.
-**What the text does not settle:** whether one person's own local wrapper counts as "ordinary,
-individual usage", as a "product or service", as "routing requests", or as automated access that
-Anthropic "explicitly permits" (Claude Code documents `claude -p` for scripts, but as the Agent SDK
-via the CLI). That is for Anthropic to answer, not for this code. **Technical success does not
-establish permission.**
-
-Two more points that are yours to check:
-
-- **Whose documents are they?** If they belong to an employer (QATOOL processes PRDs), a personal
-  subscription is probably not an approved place to send them. For consumer plans Anthropic
-  documents that data is used for model training when that setting is on (including Claude Code),
-  with 5-year retention if allowed and 30 days if not
-  (<https://code.claude.com/docs/en/data-usage>). Commercial plans are documented differently.
-- **Plan limits.** Usage is shared with all your Claude use. Each request can take several model
+- **Whether a given use is permitted is not decided by this code.** It is the operator's responsibility and
+  risk. Technical success is not permission.
+- **Serving other people is the case the quoted text restricts.** QATOOL's public staging demo does this
+  through the owner's login, which is the owner's decision; nothing here changes that.
+- **Whose documents are they?** Material that belongs to an employer is probably not appropriate for a personal
+  subscription. For consumer plans Anthropic documents model-training and retention terms
+  (<https://code.claude.com/docs/en/data-usage>); commercial plans are documented differently.
+- **Plan limits.** Usage is shared with all of the owner's Claude use, and each request can take several model
   turns (see below).
 
-If you proceed, get a written answer first (a draft question is at the end of this file). Until
-then, leave `APAYEE_CLAUDE_EXPERIMENTAL` at `false`.
+Leave `APAYEE_CLAUDE_EXPERIMENTAL` at `false` unless you have accepted the above.
 
 ## How it works
 
@@ -146,6 +132,11 @@ is not documented, which is another reason the plan check is manual.
 
 ## One-time setup
 
+This is the **standalone** setup, with the CLI installed on the machine that runs Apayee. For the Docker
+stack, where the container has its own Linux CLI and its own sign-in stored in the Docker volume
+`apayee-claude-config`, see [DOCKER_LOCAL.md](DOCKER_LOCAL.md). Credentials are never part of the repository:
+the login is made once per machine, by the owner, through Anthropic's own flow.
+
 1. **Install Claude Code** natively on the Apayee machine. Anthropic's Windows command
    (<https://code.claude.com/docs/en/setup>), from PowerShell:
    ```powershell
@@ -178,7 +169,8 @@ is not documented, which is another reason the plan check is manual.
 6. **Check readiness:** `npm run claude:status`
 7. **Start Apayee** (`npm start`) and check `GET /v1/health` with the bearer token. It reports
    `"provider": "claude"` only when everything above holds.
-8. **QATOOL** needs the same token as `APAYEE_TOKEN`, then a restart.
+8. **QATOOL** needs the same token as its `APAYEE_TOKEN` setting, then a restart. Under QATOOL's Docker Compose
+   file the backend reaches Apayee at `http://apayee:4100` on the private Compose network instead.
 9. **Optional live check**, which sends one small synthetic request and uses subscription quota:
    ```powershell
    $env:APAYEE_CLAUDE_SMOKE = '1'; npm run claude:smoke
@@ -223,8 +215,7 @@ What is **not established** (unverified runtime considerations, not claims of sa
   slots plus a short extra margin: a run that ignores its abort keeps its process until it exits, and
   the readiness probe starts up to two short CLI processes (about once a minute).
 - More parallel runs use the subscription allowance faster, and a usage limit reached by one run is
-  likely to be reached by the others. The written-permission question at the top is unchanged and
-  matters more as throughput grows.
+  likely to be reached by the others. The terms question above is unchanged and matters more as throughput grows.
 
 Raise the setting only for a test you have approved, starting with the smallest requests, and read
 `queue.active` and `queue.max_active` in `GET /v1/health` while it runs.
@@ -310,28 +301,14 @@ structured answer on that version. The flags above and the `claude auth status` 
 documented. `claude auth status` also showed `apiProvider` and `subscriptionType` fields; they are
 undocumented, so Apayee does not rely on them and they do not replace the plan check below.
 
-**Still not run against the real CLI:** a request through Apayee's HTTP endpoint and queue (for
-example from QATOOL), concurrency of real runs at any setting, cancellation and timeout of a real run, a larger schema or prompt
-than the smoke test's, and how a missing login or a usage limit appears in `json` output. Those paths
+**Seen in QATOOL's Docker staging work (health only, no generation):** the container's own CLI signed in through the
+volume, and QATOOL's backend read `provider: "claude"` and `queue.max_active: 1` from `GET /v1/health` over the internal
+network.
+
+**Still not confirmed against the real CLI:** a full generation through Apayee's HTTP endpoint and queue driven by QATOOL
+(including the public demo's jobs), concurrency of real runs at any setting, cancellation and timeout of a real run, a larger schema or
+prompt than the smoke test's, and how a missing login or a usage limit appears in `json` output. Those paths
 are covered only by the fake CLI. If a live run returns `no_structured_output`, suspect the
 `--tools ""` restriction first, and do not loosen it without reviewing what would be enabled.
 
-**Not established:** that this use is permitted (see the top), and which plan the account is on.
-
-## Draft question for Anthropic (not sent)
-
-Fill in the live results first, or say that none exist yet.
-
-> I want written confirmation that this use is permitted under my personal Claude Pro plan. I run the
-> official, unmodified Claude Code CLI on my own computer, signed in with my own account through
-> `claude auth login` (no `--console`, no API key). A small private program that only I use, on the
-> loopback address behind a bearer token, calls `claude -p --output-format json --json-schema ...`,
-> one request at a time, each in a fresh process with tools and MCP disabled, `--safe-mode` and
-> `--no-session-persistence`. It serves no other user, is not hosted, and never reads, stores or
-> forwards credentials. [Test result and `num_turns`: ...]
->
-> 1. Is this ordinary, individual use under the Consumer Terms and the "Authentication and
->    credential use" section?
-> 2. Does Consumer Terms Section 3 item 7 (automated access) permit it, or is explicit permission needed?
-> 3. Does it matter whether the content is work-related?
-> 4. If it is not permitted, which authentication method do you require?
+**Not established:** that a given use is permitted (see the third-party terms above), and which plan the account is on.

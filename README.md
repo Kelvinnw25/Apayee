@@ -5,11 +5,11 @@
 Clients own their workflows and data. Apayee owns inference execution.
 
 > **Current state.** The default provider is a deterministic mock, and no real AI is called unless
-> you opt in. There is also an **experimental, owner-only `claude` provider** that drives the
+> you opt in. There is also an **experimental, owner-run `claude` provider** that drives the
 > official Claude Code CLI with your own signed-in Claude subscription. It is off by default, needs
-> three explicit opt-ins, and its policy status is **unconfirmed** — read
-> [docs/CLAUDE_PROVIDER.md](docs/CLAUDE_PROVIDER.md) before enabling it. Apayee holds no Anthropic API
-> key, SDK or credential, and never will under this design.
+> three explicit opt-ins, and its policy status is **unconfirmed** (see the third-party terms in
+> [docs/CLAUDE_PROVIDER.md](docs/CLAUDE_PROVIDER.md), and read them before enabling it). Apayee holds no
+> Anthropic API key, SDK or credential, and never will under this design.
 
 ## Contents
 
@@ -44,8 +44,8 @@ the operator configured, checks the output against the schema, and returns norma
 | Validate output against the client's schema     | Repair or alter a provider's output               |
 | Log operational metadata and report health      | Store prompts, results or artifacts, or log them  |
 
-Its main consumer is **QATOOL**, a separate project that turns PRDs into test cases
-([QATOOL integration](#qatool-integration)).
+Its main consumer is **QATOOL**, a separate repository that turns PRDs into test cases
+([QATOOL integration](#qatool-integration)). The two are cloned side by side (`Desktop/QATool` and `Desktop/Apayee`).
 
 ## Technology stack
 
@@ -90,12 +90,12 @@ apayee/
   README.md                  this file
   package.json, package-lock.json
   .env.example               every setting with its default (copy to .env; .env is never committed)
-  .gitignore
+  .gitignore, .gitattributes   ignore rules; LF line endings in every checkout
   docs/
-    CLAUDE_PROVIDER.md       Claude provider: design, setup, policy status, readiness, errors
-    PROVIDER_SELECTION_AUDIT.md   historical QATOOL provider-selection audit (2026-10-31)
+    CLAUDE_PROVIDER.md       Claude provider: design, third-party terms, setup, readiness, errors
     ENVIRONMENT_SNAPSHOT.md/.json recorded tool and dependency versions, with recovery steps
     DOCKER_LOCAL.md          running Apayee in Docker: build, sign-in volume, ports, Compose notes
+    archive/                 historical documents (PROVIDER_SELECTION_AUDIT.md: a QATOOL audit of 2026-10-31)
   Dockerfile, .dockerignore  the container image (docker/entrypoint.sh starts Apayee and its port forwarder)
   scripts/
     claude-auth.js           CLI for claude:login, claude:status, claude:smoke
@@ -150,13 +150,19 @@ Files inside `src/providers/claude/`:
 
 ## Setup on a new computer
 
+Apayee is a separate Git repository. QATOOL's Docker Compose file builds it from `../Apayee`, so on a machine that will
+run both, clone them **side by side** (`Desktop/QATool` and `Desktop/Apayee`); the complete two-repository procedure is
+in QATOOL's README ("Setup on a new Windows laptop"). Two ways to run Apayee:
+
+### A. Standalone, on the host (development and the mock provider)
+
 Nothing outside the project folder is required for the mock provider.
 
 1. **Install Node.js 22.13 or newer** and check with `node --version`.
-2. **Copy the project** without `node_modules` and without `.env`. Both are rebuilt or recreated below.
-3. **Install dependencies:**
+2. **Clone the repository** (`git clone https://github.com/Kelvinnw25/Apayee.git`). `node_modules` and `.env` are not in Git.
+3. **Install dependencies from the lockfile:**
    ```bash
-   npm install
+   npm ci
    ```
 4. **Create the settings file** (optional for the mock; every setting has a default):
    ```bash
@@ -168,17 +174,23 @@ Nothing outside the project folder is required for the mock provider.
    npm test
    npm start
    ```
-   The service listens on `http://127.0.0.1:4100`. Try `GET /v1/health`.
+   The service listens on `http://127.0.0.1:4100`. Try `GET /v1/health` (with the bearer token when one is set).
 
 The Node.js, npm, Claude CLI and dependency versions this project was last checked with, and how to
 restore them, are in [docs/ENVIRONMENT_SNAPSHOT.md](docs/ENVIRONMENT_SNAPSHOT.md).
 
-**In Docker** (local development, with its own Linux CLI and its own sign-in in a named volume): the full
-procedure is in [docs/DOCKER_LOCAL.md](docs/DOCKER_LOCAL.md). For a standalone `docker run`, use a separate
-`.env.docker`, not the Windows `.env` (the commands below do). QATOOL's Compose file behaves differently: it
-passes the Windows `../Apayee/.env` to the container, and that works only because the container entrypoint fixes
-the internal host and port (`127.0.0.1:4101`, socat on `4100`) and the Compose file overrides
-`APAYEE_CLAUDE_CLI_PATH` with the Linux path. Under Compose no host port is published for Apayee at all.
+### B. In Docker (the image has its own Linux CLI and its own sign-in)
+
+The container's Claude sign-in is stored in the named volume `apayee-claude-config`, mounted at `/home/node/.claude`. It is
+**created and filled on each machine** and never travels through Git: it is the owner's personal sign-in. The full procedure
+is in [docs/DOCKER_LOCAL.md](docs/DOCKER_LOCAL.md). The two ways to start the image differ:
+
+- **Through QATOOL's Compose file** (`docker compose` in the QATOOL repository): Compose builds `../Apayee`, passes
+  `../Apayee/.env` to the container, and publishes **no** host port for Apayee (QATOOL's backend reaches it at `http://apayee:4100`).
+  This works because the container entrypoint fixes the internal host and port (`127.0.0.1:4101`, `socat` on `4100`) and Compose
+  overrides `APAYEE_CLAUDE_CLI_PATH` with the Linux path. There the volume is declared `external: true`, so create it once with
+  `docker volume create apayee-claude-config`; `docker compose down -v` does not delete it.
+- **Standalone `docker run`**, with a separate `.env.docker` (not the Windows `.env`) and a port published only on loopback:
 
 ```powershell
 docker build -t apayee:local .
@@ -188,24 +200,30 @@ docker run -d --name apayee --restart unless-stopped -p 127.0.0.1:4100:4100 --en
 docker stop apayee
 ```
 
-Inside the container Apayee listens on loopback (4101), as the Claude provider requires, and `socat` listens on
-port 4100. With `docker run`, publish it only on `127.0.0.1`; under QATOOL's Compose file do not publish it.
-The sign-in volume `apayee-claude-config` is a named volume in both cases; under Compose it is Compose-managed,
-so `docker compose down -v` deletes the container's sign-in.
+Inside the container Apayee listens on loopback (4101), as the Claude provider requires, and `socat` listens on port 4100. With
+`docker run`, publish it only on `127.0.0.1`; under QATOOL's Compose file do not publish it.
 
-**To use the experimental Claude provider** on the new machine you also need to do the following
-there. Nothing carries over from the old computer: the login lives in the CLI's own storage for that
-Windows user, and `.env` holds the token.
+### Authentication and credentials on a fresh machine
 
-1. Install the official Claude Code CLI natively and confirm `claude --version`
-   (see [docs/CLAUDE_PROVIDER.md](docs/CLAUDE_PROVIDER.md), "One-time setup").
-2. `npm run claude:login` as the same OS user that will run Apayee, and finish the sign-in with Anthropic.
-3. Generate a **new** token for this machine (see [Security](#security)) and put it in `.env`
-   as `APAYEE_AUTH_TOKEN`, together with `APAYEE_PROVIDER=claude`, `APAYEE_CLAUDE_EXPERIMENTAL=true`
-   and `APAYEE_CLAUDE_SUBSCRIPTION_CONFIRMED=true` (your attestation, after checking your plan in your
-   Claude account settings).
-4. `npm run claude:status`, then `npm start`.
-5. Give the same token to each client (QATOOL's `APAYEE_TOKEN`) and restart it.
+Nothing carries over from the old computer. Two different things must be provisioned, and neither is in Git:
+
+1. **Apayee's bearer token** (`APAYEE_AUTH_TOKEN` in `.env`): generate a new one on the new machine (see [Security](#security)). Give the
+   **same value** to each client (QATOOL's `APAYEE_TOKEN`).
+2. **The Claude CLI sign-in** (only for the `claude` provider): made once by the owner, through Anthropic's own flow, on the machine
+   that runs the CLI. On the host it lives in the CLI's own storage for that OS user; in Docker it lives in the `apayee-claude-config`
+   volume. Apayee never sees, stores or forwards it.
+
+To use the experimental Claude provider on the new machine:
+
+1. Host only: install the official Claude Code CLI natively and confirm `claude --version` (see
+   [docs/CLAUDE_PROVIDER.md](docs/CLAUDE_PROVIDER.md), "One-time setup"). In Docker the image already contains it.
+2. Sign in: `npm run claude:login` as the same OS user that will run Apayee (Docker: `docker compose run --rm apayee node
+   scripts/claude-auth.js login` from the QATOOL repository), and finish the browser step with Anthropic.
+3. Put `APAYEE_AUTH_TOKEN`, `APAYEE_PROVIDER=claude`, `APAYEE_CLAUDE_EXPERIMENTAL=true` and
+   `APAYEE_CLAUDE_SUBSCRIPTION_CONFIRMED=true` (your attestation, after checking your plan in your Claude account settings) in `.env`.
+4. Check readiness: `npm run claude:status` (host), or in Docker the health check in [docs/DOCKER_LOCAL.md](docs/DOCKER_LOCAL.md). It must report
+   provider `claude`. Then start Apayee and restart each client.
+5. Leave `APAYEE_MAX_CONCURRENT` unset (default 1). Valid range is 1 to 3; raising it is unverified with a real CLI.
 
 ## Configuration
 
@@ -466,7 +484,8 @@ Summary only; the full design, policy discussion, readiness states and recovery 
 
 ## QATOOL integration
 
-QATOOL is a separate project and is not part of this repository. It talks to Apayee over HTTP:
+QATOOL is a separate repository and is not part of this one. It talks to Apayee over HTTP (on the host, loopback `127.0.0.1:4100`; under
+its Docker Compose file, the internal address `http://apayee:4100` with no published port):
 
 - **Transport.** QATOOL's Apayee adapter (`server/llm/apayee.js` in that project) implements its
   `generateJson({ system, prompt, schema, signal })` contract by calling `POST /v1/generate` with the
@@ -479,6 +498,12 @@ QATOOL is a separate project and is not part of this repository. It talks to Apa
   `APAYEE_MAX_TIMEOUT_MS`) and `APAYEE_QUEUE_WAIT_MS`.
 - **Cost of a run.** Structuring (`/api/extract`) and generation (`/api/generate`) are two Apayee
   requests. Semantic review adds a third only when requested.
+- **Public demo (fixed Claude, asynchronous jobs).** QATOOL's `PUBLIC_DEMO` mode serves visitors through its own backend only:
+  they get a Turnstile-checked ticket and submit jobs, never reaching Apayee and never choosing a model, and the direct model
+  routes (`/api/extract`, `/api/generate`) are not registered in that mode. The backend runs those jobs FIFO against Apayee on the
+  internal Docker network, using the same bearer token. It reads `queue.max_active` from `GET /v1/health` and runs no more jobs
+  at once than that (assuming 1 when the field is missing), so Apayee needs no demo-specific setting. QATOOL's `JOB_WORKERS` (default 1)
+  and Apayee's `APAYEE_MAX_CONCURRENT` (default 1) should both stay at 1 until a real run has been measured.
 - **Mapping to note.** `PROVIDER_NOT_READY` is not "overloaded, wait": QATOOL maps it to a
   not-configured error, and `PROVIDER_RATE_LIMITED` to a rate-limit error that says not to retry
   straight away.
@@ -590,18 +615,18 @@ edit those with the suite in mind.
   this API.
 - **Claude provider:** experimental. Tested against a fake CLI whose output follows Anthropic's
   documentation. One real request through `npm run claude:smoke` (CLI 2.1.316) succeeded and showed
-  `num_turns` 2 for one request. A request through Apayee's HTTP endpoint from QATOOL has **not** yet
-  been run live, nor have concurrency, real timeouts and larger schemas. Details in
+  `num_turns` 2 for one request. In QATOOL's Docker stack the container's CLI signed in and QATOOL read
+  `provider: "claude"` from health. A full generation through Apayee's HTTP endpoint from QATOOL is **not**
+  yet confirmed, nor are concurrency, real timeouts and larger schemas. Details in
   [docs/CLAUDE_PROVIDER.md](docs/CLAUDE_PROVIDER.md).
-- **Policy:** whether scripted use of a consumer subscription is permitted is unconfirmed, and Apayee
-  cannot verify which plan an account is on. Technical success is not permission.
-- **Limits by design:** queue state is lost on restart; no built-in TLS; one gateway process with one
-  active execution; `pattern` and `patternProperties` are refused; schemas compile synchronously on each
+- **Policy:** whether scripted use of a consumer subscription is permitted, and serving other people through it (as QATOOL's
+  public staging demo does), is unconfirmed and the operator's responsibility; Apayee cannot verify which plan an account is on.
+  Technical success is not permission. The factual terms are in [docs/CLAUDE_PROVIDER.md](docs/CLAUDE_PROVIDER.md).
+- **Limits by design:** queue state is lost on restart; no built-in TLS; one gateway process with
+  `APAYEE_MAX_CONCURRENT` active executions (1 by default, at most 3); `pattern` and `patternProperties` are refused; schemas compile synchronously on each
   request (typically 20 to 40 ms, about 0.7 s at the default size limit, and nothing else runs meanwhile).
-- **Possible next steps:** a live QATOOL run through Apayee, using the exit code and the CLI's
-  `apiProvider` and `subscriptionType` fields in the readiness probe (currently undocumented, so
-  unused), and making QATOOL's pipeline adopt the two-stage `understanding.json` workflow shown in the
-  example, which QATOOL's own pipeline code does not yet have.
+- **Possible next steps:** a live QATOOL run through Apayee, and using the exit code and the CLI's
+  `apiProvider` and `subscriptionType` fields in the readiness probe (currently undocumented, so unused).
 
 ## Adding a provider
 

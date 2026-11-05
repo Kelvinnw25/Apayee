@@ -8,14 +8,14 @@ image, and they differ in how settings and the host port are handled:
 | Who owns the start command | You, with the commands below | QATOOL's repository (`compose.yaml`); this repository deliberately has no compose file |
 | Settings file | A separate `.env.docker` (`--env-file`) | `../Apayee/.env`, the same file `npm start` reads on Windows |
 | Host port | `-p 127.0.0.1:4100:4100` | **None.** Neither 4100 nor 4101 is published; only the QATOOL backend reaches Apayee, at `http://apayee:4100` on the Compose network |
-| Claude volume | `apayee-claude-config`, created by you | `apayee-claude-config`, a named volume the Compose file manages (details below) |
+| Claude volume | `apayee-claude-config`, created by you | `apayee-claude-config`, an **external** volume you create once; Compose never deletes it (details below) |
 
 - **Contains no secrets.** The image has no `.env`, no token and no Claude login. Settings arrive as
   environment variables when the container starts; the Claude login lives in a named volume.
 - **The Windows Claude login is never copied.** The container has its own Linux CLI and its own sign-in,
   made once with your own browser.
-- **Same policy as everywhere else.** The Claude provider is experimental and owner-only, and whether this use
-  is permitted is unconfirmed. Read [CLAUDE_PROVIDER.md](CLAUDE_PROVIDER.md) first. Nothing here changes the
+- **Same policy as everywhere else.** The Claude provider is experimental and owner-run, and whether this use
+  is permitted is unconfirmed. Read the third-party terms in [CLAUDE_PROVIDER.md](CLAUDE_PROVIDER.md) first. Nothing here changes the
   `APAYEE_CLAUDE_EXPERIMENTAL` and `APAYEE_CLAUDE_SUBSCRIPTION_CONFIRMED` flags; they are yours to set.
 
 ## What is in the image
@@ -183,15 +183,15 @@ QATOOL's repository owns the Compose file (`compose.yaml`, project name `qatool`
 | Settings | `env_file: ../Apayee/.env` (the Windows file; see Configuration for why this works) |
 | CLI path | `APAYEE_CLAUDE_CLI_PATH: /home/node/.local/bin/claude` under `environment`, overriding the file |
 | Host ports | None for Apayee (no `ports` entry). 4100 is reachable only on the Compose network; 4101 is reachable by nothing outside the container |
-| Login volume | `apayee-claude-config:/home/node/.claude`, declared under top-level `volumes:` with `name: apayee-claude-config`. It is a **named, Compose-managed volume**, not `external: true`. The fixed name makes Compose use the volume you signed in to rather than a `<project>_`-prefixed empty one |
+| Login volume | `apayee-claude-config:/home/node/.claude`, declared under top-level `volumes:` as `external: true` with `name: apayee-claude-config`. Compose neither creates nor owns it, so it cannot delete it, and `up` stops with an error if it is missing (create it once with `docker volume create apayee-claude-config`). The fixed name is the volume you signed in to |
 | Limits | `cap_drop: [ALL]`, `no-new-privileges`, and ceilings on memory, CPUs and process IDs. They are starting points that have not been measured for real CLI runs |
 | QATOOL settings | `APAYEE_BASE_URL=http://apayee:4100`; `APAYEE_TOKEN` equal to `APAYEE_AUTH_TOKEN`; `LLM_TIMEOUT_MS` not above `APAYEE_MAX_TIMEOUT_MS` |
 | Start order | The backend has `depends_on: { apayee: { condition: service_healthy } }`. Healthy means "up", not "Claude ready" |
 
-**The login volume and `down -v`.** Because the volume is Compose-managed, `docker compose down` keeps it but
-`docker compose down -v` (and removing or pruning the volume) deletes the container's Claude sign-in, and you sign
-in again. Declaring it `external: true` would make Compose refuse to delete it. That change belongs in QATOOL's
-repository and has not been made. **Several CLI processes sharing this one volume** (when `APAYEE_MAX_CONCURRENT`
+**The login volume and `down -v`.** Because the volume is external, `docker compose down` and `docker compose down -v`
+both keep it. Only `docker volume rm apayee-claude-config` or `docker volume prune` deletes the container's Claude sign-in
+(you would then sign in again), so do not run those unless that is what you want. The sign-in is per machine and is not in Git.
+**Several CLI processes sharing this one volume** (when `APAYEE_MAX_CONCURRENT`
 is above 1) is an unverified runtime consideration, as described in `docs/CLAUDE_PROVIDER.md`, "Concurrency".
 
 Commands (run in QATOOL's folder):
@@ -213,8 +213,9 @@ service. The one-time sign-in is the same as the standalone procedure and is you
 Docker reported them healthy after several hours; the Apayee container had no host port binding, only 4100
 exposed, ran as user `node` with all capabilities dropped, and mounted `apayee-claude-config` at
 `/home/node/.claude` read-write. That running image was built before `APAYEE_MAX_CONCURRENT` existed, so it needs a
-rebuild to use it. **Not observed:** a completed sign-in through Compose, any `/v1/generate` request, any model
-request, or a QATOOL run through Apayee to the real CLI.
+rebuild to use it. **Not observed then:** a completed sign-in through Compose, any `/v1/generate` request, any model
+request, or a QATOOL run through Apayee to the real CLI. (Later QATOOL staging work signed the container's CLI in through
+the volume and read `provider: "claude"` from health; a full generation through HTTP is still not confirmed.)
 
 ## What was checked (2026-11-03) and what was not
 

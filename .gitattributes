@@ -1,0 +1,9 @@
+# Keep LF in the working tree on every OS, so the same file is byte-identical for every developer and in Docker.
+# The index already stores LF; on Windows this only stops core.autocrlf from turning checkouts into CRLF.
+* text=auto eol=lf
+
+# Binary inputs/outputs: never normalise.
+*.png binary
+*.ico binary
+*.gz binary
+*.tgz binary

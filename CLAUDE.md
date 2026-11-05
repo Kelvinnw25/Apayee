@@ -11,11 +11,9 @@ from a trusted backend client, runs it through one operator-chosen provider, val
 against the client's JSON Schema, and returns normalized JSON. Clients own workflows, prompts and
 data; Apayee owns inference execution only. It stores nothing.
 
-Main consumer: **QATOOL**, a sibling project (a separate repo/folder, not part of this one) that turns
-PRDs into test cases. Apayee is its optional LLM backend, next to Gemini.
-
-Neither project was a git repository when this file was written. Check `git status` before assuming
-history exists.
+Main consumer: **QATOOL**, a sibling project (a separate Git repo cloned next to this one, not part of it) that turns
+PRDs into test cases. Apayee is its optional LLM backend, next to Gemini, and the fixed model behind QATOOL's public
+staging demo. QATOOL's Docker Compose file builds this repository from `../Apayee`; both repos are cloned side by side.
 
 ## Request flow
 
@@ -57,7 +55,7 @@ decide whether Claude is selectable.
 | `scripts/claude-auth.js` | `claude:login`, `claude:status`, `claude:smoke` (implemented in `providers/claude/auth.js`) |
 | `examples/qatool-client/` | Mock-level demonstration of the QATOOL integration pattern. Not QATOOL's code |
 | `tests/` | `node:test` suites; `helpers/` and `fixtures/` hold the fake CLI and harness |
-| `docs/` | `CLAUDE_PROVIDER.md` (provider design, setup, policy), `PROVIDER_SELECTION_AUDIT.md` (historical QATOOL audit, dated 2026-10-31), `ENVIRONMENT_SNAPSHOT.md` / `.json` (recorded toolchain and dependency versions, evidence levels, recovery steps), `DOCKER_LOCAL.md` (container build, sign-in volume, ports, notes for QATOOL's Compose file) |
+| `docs/` | `CLAUDE_PROVIDER.md` (provider design, setup, policy), `archive/PROVIDER_SELECTION_AUDIT.md` (historical QATOOL audit, dated 2026-10-31; not current truth), `ENVIRONMENT_SNAPSHOT.md` / `.json` (recorded toolchain and dependency versions, evidence levels, recovery steps), `DOCKER_LOCAL.md` (container build, sign-in volume, ports, notes for QATOOL's Compose file) |
 | `Dockerfile`, `.dockerignore`, `docker/entrypoint.sh` | Container image. Node 22.15.0 on Debian, native Linux CLI 2.1.316 for user `node`. The entrypoint runs Apayee on `127.0.0.1:4101` and `socat` on `0.0.0.0:4100`, because the Claude provider refuses a non-loopback host. No compose file here; QATOOL's repo owns it |
 
 Claude provider files (`src/providers/claude/`): `claude.provider.js` (class, readiness cache, error
@@ -68,7 +66,7 @@ flags, minimum CLI version), `environment.js` (child env allowlist, denied varia
 
 ## How the Claude CLI integration works
 
-Experimental, **owner-only**, uses the owner's own signed-in Claude subscription. No API key, no
+Experimental, **owner-run**, uses the owner's own signed-in Claude subscription. No API key, no
 Anthropic SDK, no credential handling in Apayee. Off unless `APAYEE_CLAUDE_EXPERIMENTAL=true` and
 `APAYEE_CLAUDE_SUBSCRIPTION_CONFIRMED=true` (the owner's attestation; Apayee cannot verify a plan), and
 `APAYEE_PROVIDER=claude` additionally needs a strong `APAYEE_AUTH_TOKEN` and a loopback host.
@@ -103,8 +101,9 @@ session/weekly/model limit and throttling -> `PROVIDER_RATE_LIMITED` 429; 5xx/52
 
 ## QATOOL link
 
-QATOOL talks to Apayee over loopback HTTP with `Authorization: Bearer <APAYEE_TOKEN>`. On the QATOOL
-side (separate project, edit only when a task says so): `server/llm/apayee.js` is the adapter
+QATOOL talks to Apayee over HTTP with `Authorization: Bearer <APAYEE_TOKEN>`: loopback `http://127.0.0.1:4100` when
+Apayee runs on the host, or `http://apayee:4100` on the private Compose network in Docker (no host port is published).
+On the QATOOL side (separate project, edit only when a task says so): `server/llm/apayee.js` is the adapter
 (implements `generateJson({system, prompt, schema, signal})` -> `{data, usage}`, generates the
 `request_id`, defaults `task` to `generic`, maps Apayee codes to `LLM_*` errors, never retries),
 `server/llm/catalog.js` offers the provider choices, and `?provider=claude` on `/api/extract` and
@@ -117,10 +116,17 @@ A QATOOL run costs two generation requests (structuring in `/api/extract`, gener
 `/api/generate`); semantic review adds a third only with `?semantic=true`. Extract is fail-soft: if the
 structuring call fails, QATOOL falls back to deterministic extraction, so check `status.mode === 'ai'`.
 
+**QATOOL's public demo** (`PUBLIC_DEMO=true`, separate from the owner-only mode) fixes the model to Claude through Apayee:
+visitors never reach Apayee or choose a model. They submit asynchronous jobs to QATOOL's backend, which runs the same
+phases (extract, generate, validate) from a FIFO queue and calls Apayee on the internal network only; the direct model routes
+are not registered there. QATOOL reads `queue.max_active` from `GET /v1/health` and never runs more jobs than that (it assumes 1 if the
+field is absent, and refuses new jobs if it is malformed). Apayee needs no demo-specific setting: keep `APAYEE_MAX_CONCURRENT` at its default 1
+until a real run has been measured.
+
 ## Commands
 
 ```bash
-npm install
+npm ci
 npm test                     # full suite, real sockets, network guard, fake CLI (no model, no network)
 npm start                    # node --env-file-if-exists=.env src/server.js
 npm run dev                  # same, with --watch
@@ -132,11 +138,12 @@ npm run example:qatool       # needs `npm start` running in another terminal
 
 Docker (details in `docs/DOCKER_LOCAL.md`). Two ways to start the image, with different env-file handling:
 a standalone `docker run` uses a separate `.env.docker`, never the Windows `.env`; QATOOL's Compose file
-(`../QATOOL/compose.yaml`, its repo) passes `../Apayee/.env` to the container with `env_file`. The latter works
+(`../QATool/compose.yaml`, its repo) passes `../Apayee/.env` to the container with `env_file`. The latter works
 because `docker/entrypoint.sh` exports `APAYEE_HOST=127.0.0.1` and `APAYEE_PORT=4101` itself and Compose sets
 `APAYEE_CLAUDE_CLI_PATH` under `environment`, which beats the file. Under Compose neither 4100 nor 4101 is
-published on the host, and `apayee-claude-config` is a named, Compose-managed volume (`down -v` deletes the
-sign-in). Standalone:
+published on the host, and `apayee-claude-config` is declared `external: true` there (create it once with
+`docker volume create apayee-claude-config`; `down -v` does not delete it). The sign-in inside the volume is per
+machine and never in Git. Standalone:
 
 ```powershell
 docker build -t apayee:local .
@@ -152,19 +159,22 @@ in `tests/lifecycle.test.js` and the executable-bit test in `tests/claude-provid
 Linux process-group kill path, have been run in a Node 22.15.0 Linux container as a non-root user (see
 `docs/ENVIRONMENT_SNAPSHOT.md`): every test passes there.
 
-## Status when this file was written
+## Status
+
+Statements below are as last verified; run `npm test` for current results (317 tests: 315 pass, 2 skipped on Windows, 0 fail).
 
 - Mock provider and the HTTP/queue/validation layers: complete and covered by tests.
 - Claude provider: tested against a fake CLI. One real direct call to `ClaudeProvider.generate`
   succeeded on CLI 2.1.316 (`num_turns` 2, schema valid), and `--tools ""` still allowed structured
-  output. **Not yet done:** a live QATOOL -> Apayee HTTP -> Claude run, concurrency, long-run and
-  larger-schema behaviour against the real CLI.
+  output. In QATOOL's Docker stack the container's own CLI signed in and QATOOL's backend read `provider: "claude"`
+  from health. **Not yet confirmed:** a full live QATOOL -> Apayee HTTP -> Claude generation run, concurrency,
+  long-run and larger-schema behaviour against the real CLI.
 - Concurrency: `APAYEE_MAX_CONCURRENT` 1 to 3 (default 1) is covered by queue tests and fake-CLI tests
   (`tests/queue.test.js`, `tests/claude-concurrency.test.js`). Several real CLI processes sharing one
   sign-in and config directory is **unverified**; do not describe it as safe or measured.
-- Policy: whether scripted use of a subscription is allowed is **unconfirmed**. Technical success is not
-  permission. Do not describe the provider as approved. The unsent draft question is in
-  `docs/CLAUDE_PROVIDER.md`.
+- Policy: whether scripted use of a subscription is allowed, and serving other people through it, is **unconfirmed** and the
+  operator's responsibility. Technical success is not permission. Do not describe the provider as approved. The factual
+  third-party terms are in `docs/CLAUDE_PROVIDER.md`.
 
 ## Working rules for this repo
 

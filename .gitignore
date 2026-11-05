@@ -1,4 +1,4 @@
-# Dependencies (restore with `npm install`; package-lock.json IS tracked)
+# Dependencies (restore with `npm ci`; package-lock.json IS tracked)
 node_modules/
 
 # Secrets and local settings. Only the documented example is tracked.

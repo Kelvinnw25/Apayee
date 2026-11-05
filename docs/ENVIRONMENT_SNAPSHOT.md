@@ -41,7 +41,8 @@ checks and quick recovery. Machine-readable twin: [ENVIRONMENT_SNAPSHOT.json](EN
 | winget | present | on PATH | not required | Not used |
 
 Docker is optional: the project can run directly on Windows or from the `Dockerfile` added on 2026-11-03
-(section 9). There is no compose file in this repository; QATOOL's repository is to own it.
+(section 9). There is no compose file in this repository; QATOOL's repository owns it (`compose.yaml`, which builds
+this repository from `../Apayee`; see [DOCKER_LOCAL.md](DOCKER_LOCAL.md)).
 
 ## 4. Claude Code CLI
 
@@ -125,7 +126,7 @@ every variable.
 Listens on `http://127.0.0.1:4100`. Queue: one active execution by default (`APAYEE_MAX_CONCURRENT`, 1 to 3), 16 waiting. Defaults: execution timeout
 180 s, maximum 600 s, Claude ceiling 300 s. Process environment variables override `.env`.
 
-## 9. Docker and WSL (nothing was installed for this project)
+## 9. Docker and WSL (observed at the 2026-11-03 capture; Docker Desktop was already on the PC)
 
 | Item | Observed |
 | --- | --- |
@@ -138,7 +139,10 @@ Listens on `http://127.0.0.1:4100`. Queue: one active execution by default (`APA
 The project's own container image (added 2026-11-03, [DOCKER_LOCAL.md](DOCKER_LOCAL.md)) is built with these: base
 `node:22.15.0-bookworm-slim` (Debian 12), Node 22.15.0, npm 10.9.2 (bundled, unlike the Windows PC's 11.6.4), Claude
 CLI 2.1.316 (Linux native build), the same lockfile via `npm ci --omit=dev`. It built and started on this Docker
-Desktop; the Claude sign-in inside it and a request to the model were not exercised.
+Desktop. At that capture the Claude sign-in inside it and a request to the model were not exercised. Later, in
+QATOOL's Docker stack, the container's CLI was signed in and QATOOL's backend read `provider: "claude"` and
+`queue.max_active: 1` from health; a full generation through the HTTP endpoint is not yet confirmed. Versions, image
+and test counts in this file are the 2026-11-03 baseline unless a line says otherwise.
 
 ## 10. Commands
 
